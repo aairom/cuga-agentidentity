@@ -28,6 +28,13 @@ flowchart TB
         CA[CugaAgent / CugaSupervisor]
         POL[Policies: intent guard, tool approval]
     end
+    subgraph LLM engine layer
+        EM[EngineManager - llm_engines.py]
+        EO[OllamaEngine]
+        EL[LlamaCppEngine]
+        EC[CloudEngine]
+        EF[FakeEngine]
+    end
     UI --> SC
     CLI --> SC
     HRN --> SC
@@ -44,7 +51,13 @@ flowchart TB
     TV --> AUD
     BE --> M[MockVerifyBackend]
     BE --> H[HttpVerifyBackend]
-    CA -.-> LLM[(Ollama / OpenAI-compatible)]
+    SC --> EM
+    EM --> EO
+    EM --> EL
+    EM --> EC
+    EM --> EF
+    CA -.-> MODEL[(shared chat model)]
+    EM -.-> MODEL
 ```
 
 ## Agent lifecycle (state machine)
@@ -78,6 +91,77 @@ flowchart TD
     J --> K[Result + audit event]
 ```
 
+## LLM engine layer
+
+`agent_identity/llm_engines.py` hides the model backend behind one interface. Agents never know which engine they use; they receive one shared LangChain chat model from `Showcase`.
+
+```mermaid
+classDiagram
+    class LLMEngine {
+        <<abstract>>
+        +engine_id
+        +fields: ConfigField[]
+        +detect(settings) Detection
+        +auto_config(settings) EngineConfig
+        +test_connection(cfg) TestResult
+        +build_model(cfg) ChatModel
+        +apply_env(cfg)
+    }
+    LLMEngine <|-- OllamaEngine
+    LLMEngine <|-- LlamaCppEngine
+    LLMEngine <|-- CloudEngine
+    LLMEngine <|-- FakeEngine
+    class EngineManager {
+        +detect_all() Detection[]
+        +resolve() Resolution
+        +test(cfg) TestResult
+        +save_override(cfg)
+        +load_override()
+        +clear_override()
+    }
+    EngineManager --> LLMEngine : registry ENGINES
+    class Showcase {
+        +engine: EngineConfig
+        +switch_engine(cfg)
+        -_shared_model()
+    }
+    Showcase --> EngineManager
+```
+
+| Piece | Role |
+|---|---|
+| `EngineConfig` | Immutable description of the active engine: id, base URL, model, `SecretStr` key, source (`ui`, `env`, `auto`, `fallback`, `fake`). `public_dict()` never includes the key. |
+| `ConfigField` | Declares the form fields of an engine, so the UI renders any engine without engine-specific code. |
+| `Detection` | Result of probing: `running`, `installed`, `not detected`, endpoint, models. |
+| `EngineManager` | Detection, resolution, connection tests and the persisted UI choice (`.cuga_state/llm_engine.json`, mode 600, no key). |
+| `LLMEngineError` | Message plus remediation. Subclasses: `EngineMisconfigured`, `EngineUnavailable`, `EngineConnectionError`, `EngineSwitchError`. |
+
+### Switching with a consistent state
+
+`Showcase.switch_engine` (see the sequence diagram in the [README](../README.md#llm-engines)) is built around three objects: a `_ready` gate that makes new turns wait while a switch runs, an `_idle` event that is set when no turn is in flight, and a per-agent `MemorySaver` that outlives the model.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Serving
+    Serving --> Testing: switch_engine(new)
+    Testing --> Serving: test fails (EngineSwitchError, nothing changed)
+    Testing --> Draining: test ok, gate closed
+    Draining --> Swapping: in-flight turns finished
+    Draining --> Restoring: drain timeout
+    Swapping --> Serving: model replaced, graphs rebuilt, audit llm.engine_switched
+    Swapping --> Restoring: build fails
+    Restoring --> Serving: old engine back, audit llm.engine_switch_failed
+```
+
+- A turn that started before the switch finishes on the old model. A turn that arrives during the switch waits at the gate and then runs on the new model.
+- Cuga graphs are rebuilt lazily on the next turn by resetting `agent._graph` and `agent._compiled_graph`; this relies on Cuga 0.4.5 internals and should be re-checked when Cuga is upgraded.
+- The checkpointer is ours, so chat history and pending approvals are not lost.
+- Tokens, the agent registry and the audit log do not depend on the model at all.
+
+### Error handling and logging
+
+Every failure on the engine path becomes an `LLMEngineError` with a remediation. The UI prints both. The logger `agent_identity.llm` records the same text (never a key) and the audit log records switches. The fallback decisions made at start-up (`attempts` and `warnings` of `Resolution`) are logged and shown on the page when the app had to fall back.
+
 ## Design decisions
 
 | Decision | Reason |
@@ -89,13 +173,20 @@ flowchart TD
 | Strict status check on every validation | Suspending an agent takes effect immediately, even for unexpired tokens. |
 | One Cuga policy store per agent | Cuga's default store is shared per process; isolating it stops policies leaking between agents. |
 | Audit events keyed by Agent ID | Management and runtime events can be read as one story. |
+| One interface per LLM engine, data-driven form fields | A new engine is one class plus a registry entry; the UI needs no change. |
+| Test the new engine before touching the old one | A bad URL or key can never leave the app without a working model. |
+| UI choice never stores the API key | The key stays in `.env` or memory; the saved file can be read or shared without leaking it. |
+| Plain http to a remote host is refused for the cloud engine | A key must not cross the network unencrypted. |
 
 ## Honest limits
 
 - `HttpVerifyBackend` is a reference implementation and has not been run against a live IBM Verify tenant.
 - The Harness Kit scaffolds skills; the conformance checks are the showcase's own (`harness/scenarios.py`).
 - `execution_mode="codeact"` does not work with the default local model; `function_calling` is the default.
-- The Containerfile has not been built or tested in this repository's validation run.
+- The container image builds and starts (health check OK, `demo.py` runs inside it). Chatting with Ollama from inside the container was not exercised, and the image was built before the engine layer existed.
+- LLM engines: Ollama detection, connection test, switching and persistence were exercised against a real local Ollama. **llama.cpp and cloud were tested with mocked HTTP only**: no `llama-server` was running and no cloud key was available.
+- The runtime graph reset relies on private Cuga attributes (0.4.5).
+- Small local models may not follow Cuga's tool protocol (`llama3.2:latest` hung in an earlier test); switching to them works but chat quality depends on the model.
 
 ## Identity flows
 

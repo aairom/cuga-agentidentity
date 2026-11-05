@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import itertools
+import asyncio
 import os
 import uuid
 from dataclasses import dataclass, field
@@ -11,11 +11,12 @@ from typing import Any
 
 from .audit import AuditLog
 from .backend import HttpVerifyBackend, IdentityBackend, MockVerifyBackend
-from .config import Settings, apply_llm_env, get_settings
+from .config import Settings, get_settings
 from .data import USERS, Store
-from .errors import BackendError
+from .errors import BackendError, EngineSwitchError, LLMEngineError
 from .gateway import CallContext, IdentityGateway, reset_call_context, set_call_context
 from .lifecycle import AgentIdentityService
+from .llm_engines import ENGINES, FAKE_ENGINE, EngineConfig, EngineManager, get_engine
 from .logging_setup import get_logger
 from .models import AgentRecord, Entitlement, Principal
 from .spec import AgentSpec
@@ -37,16 +38,21 @@ def build_backend(settings: Settings) -> IdentityBackend:
     return MockVerifyBackend(settings.mock_issuer, settings.token_ttl_seconds)
 
 
-def build_model(settings: Settings) -> Any:
-    """Return the chat model: real (Ollama / OpenAI-compatible, picked up by Cuga) or a fake."""
-    if settings.llm_mode == "fake":
-        from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-        from langchain_core.messages import AIMessage
+def build_model(settings: Settings, engine: EngineConfig | None = None) -> Any:
+    """Return the chat model for the selected LLM engine (a LangChain chat model).
 
-        os.environ.setdefault("OPENAI_API_KEY", "fake")  # Cuga builds an LLM client eagerly
-        return GenericFakeChatModel(messages=itertools.repeat(AIMessage(content="(fake model: no LLM configured)")))
-    apply_llm_env()
-    return None  # Cuga resolves the model from env/settings
+    ``engine`` is the resolved configuration; when omitted it is derived from ``settings``
+    (``llm_mode="fake"`` -> offline fake model, otherwise the engine resolution order of
+    :class:`~agent_identity.llm_engines.EngineManager`).
+    """
+    if engine is None:
+        engine = ENGINES[FAKE_ENGINE].auto_config(settings) if settings.llm_mode == "fake" \
+            else EngineManager(settings).resolve().config
+    impl = get_engine(engine.engine)
+    impl.apply_env(engine)  # keep env vars Cuga reads in sync with the active engine
+    if engine.engine != FAKE_ENGINE:
+        os.environ.setdefault("LOGURU_LEVEL", "WARNING")
+    return impl.build_model(engine, settings.llm_timeout)
 
 
 @dataclass
@@ -88,8 +94,22 @@ class Showcase:
     """Facade used by the UI, the CLI and the tests."""
 
     def __init__(self, settings: Settings | None = None, backend: IdentityBackend | None = None,
-                 store: Store | None = None) -> None:
+                 store: Store | None = None, engine: EngineConfig | None = None) -> None:
         self.settings = settings or get_settings()
+        # The active LLM engine. Resolved once here (fake in offline mode) and changed at runtime
+        # with :meth:`switch_engine`. Agents are deployed with the model built from it.
+        self.engine_manager = EngineManager(self.settings)
+        self.engine: EngineConfig = engine or (
+            ENGINES[FAKE_ENGINE].auto_config(self.settings) if self.settings.llm_mode == "fake"  # type: ignore[assignment]
+            else self.engine_manager.resolve().config)
+        self._model: Any = None
+        # Switch gate: new turns wait while a switch is running; a switch waits for running turns.
+        self._ready = asyncio.Event()
+        self._ready.set()
+        self._idle = asyncio.Event()
+        self._idle.set()
+        self._inflight = 0
+        self._switch_lock = asyncio.Lock()
         self.audit = AuditLog()
         self.backend = backend or build_backend(self.settings)
         self.service = AgentIdentityService(self.backend, self.audit)
@@ -110,13 +130,15 @@ class Showcase:
 
         record = self.onboard(spec)
         tools = spec.tool_builder(self.gateway, self.store, spec.name) if spec.tool_builder else []
-        model = build_model(self.settings)
-        kwargs: dict[str, Any] = dict(tools=tools, special_instructions=spec.instructions,
+        model = self._shared_model()
+        from langgraph.checkpoint.memory import MemorySaver
+
+        # We own the checkpointer so conversation / pending-approval state survives an engine switch.
+        kwargs: dict[str, Any] = dict(tools=tools, special_instructions=spec.instructions, checkpointer=MemorySaver(),
+                                      model=model,
                                       cuga_folder=os.path.join(self.settings.state_dir, spec.name),
                                       reset_policy_storage=True, filesystem_sync=False, auto_load_policies=False,
                                       execution_mode=self.settings.execution_mode)
-        if model is not None:
-            kwargs["model"] = model
         try:
             # Cuga's default policy store is shared per process, so every agent would see every
             # other agent's policies. Give each agent its own isolated policy collection.
@@ -145,13 +167,12 @@ class Showcase:
     async def deploy_supervisor(self, supervisor_spec: AgentSpec, workers: list[AgentRuntime]) -> AgentRuntime:
         """Onboard a supervisor identity and wrap the already-deployed workers in a CugaSupervisor."""
         from cuga import CugaSupervisor
+        from langgraph.checkpoint.memory import MemorySaver
 
         record = self.onboard(supervisor_spec)
         kwargs: dict[str, Any] = {"agents": {w.spec.name.replace("-", "_"): w.cuga for w in workers},
-                                  "description": supervisor_spec.description}
-        model = build_model(self.settings)
-        if model is not None:
-            kwargs["model"] = model
+                                  "description": supervisor_spec.description, "model": self._shared_model(),
+                                  "checkpointer": MemorySaver()}
         try:
             sup = CugaSupervisor(**kwargs)
         except Exception as exc:
@@ -163,6 +184,83 @@ class Showcase:
         self.audit.record("agent.deployed", plane="management", agent_id=record.agent_id, actor=DEVELOPER.user_id,
                           detail={"name": supervisor_spec.name, "workers": [w.spec.name for w in workers]})
         return rt
+
+    # ---- LLM engine -----------------------------------------------------------------
+    def _shared_model(self) -> Any:
+        """One chat-model object shared by every agent (built lazily from the active engine)."""
+        if self._model is None:
+            self._model = build_model(self.settings, self.engine)
+        return self._model
+
+    async def switch_engine(self, new: EngineConfig, drain_timeout: float = 60.0, test_timeout: float = 5.0) -> EngineConfig:
+        """Switch every deployed agent to ``new`` without restarting.
+
+        1. The connection is tested first; a failing engine is never activated.
+        2. New chat turns wait, running turns finish (up to ``drain_timeout`` seconds).
+        3. The model is swapped and each agent's graph is rebuilt lazily on its next turn.
+           Checkpointers, the registry, tokens, store and audit log are untouched.
+        4. Any failure restores the previous engine and raises :class:`EngineSwitchError`.
+        """
+        old_cfg = self.engine
+        async with self._switch_lock:
+            result = await asyncio.to_thread(self.engine_manager.test, new, test_timeout)
+            if not result.ok:
+                self.audit.record("llm.engine_switch_failed", plane="management", outcome="denied", actor=DEVELOPER.user_id,
+                                  detail={"to": new.public_dict(), "reason": result.message})
+                raise EngineSwitchError(f"Not switching to {new.engine}: {result.message}", result.remediation)
+            if not new.model and result.resolved_model:
+                new = new.with_updates(model=result.resolved_model)
+            self._ready.clear()  # hold new turns
+            old_model = self._model
+            try:
+                try:
+                    await asyncio.wait_for(self._idle.wait(), drain_timeout)
+                except asyncio.TimeoutError as exc:
+                    raise EngineSwitchError(f"{self._inflight} request(s) are still running after {drain_timeout:g}s.",
+                                            "Wait for them to finish and try again, or raise the drain timeout.") from exc
+                try:
+                    model = build_model(self.settings, new)
+                    self._apply_model(model)
+                except LLMEngineError:
+                    self._apply_model(old_model)
+                    raise
+                except Exception as exc:
+                    self._apply_model(old_model)
+                    raise EngineSwitchError(f"Could not activate {new.engine}: {exc}",
+                                            "The previous engine was restored; check the logs for details.") from exc
+                self._model, self.engine = model, new
+                self.audit.record("llm.engine_switched", plane="management", actor=DEVELOPER.user_id,
+                                  detail={"from": old_cfg.public_dict(), "to": new.public_dict(),
+                                          "latency_ms": result.latency_ms})
+                log.info("LLM engine switched: %s -> %s", old_cfg.describe(), new.describe())
+                return new
+            except LLMEngineError as exc:
+                self.engine, self._model = old_cfg, old_model
+                try:
+                    get_engine(old_cfg.engine).apply_env(old_cfg)
+                except LLMEngineError:  # pragma: no cover - best effort
+                    pass
+                self.audit.record("llm.engine_switch_failed", plane="management", outcome="error", actor=DEVELOPER.user_id,
+                                  detail={"to": new.public_dict(), "reason": exc.message})
+                log.error("engine switch failed, kept %s: %s", old_cfg.describe(), exc)
+                if isinstance(exc, EngineSwitchError):
+                    raise
+                raise EngineSwitchError(exc.message, exc.remediation) from exc
+            finally:
+                self._ready.set()
+
+    def _apply_model(self, model: Any) -> None:
+        """Point every agent at ``model`` and force its graph to be rebuilt on the next turn."""
+        if model is None:
+            return
+        for rt in self.runtimes.values():
+            for attr in ("_model", "_graph", "_compiled_graph"):
+                if not hasattr(rt.cuga, attr):  # private Cuga attributes: fail loudly if a Cuga upgrade renames them
+                    raise EngineSwitchError(f"Unsupported Cuga version: '{attr}' not found on {rt.spec.name}.",
+                                            "Pin cuga==0.4.5 (see requirements.txt) or update agent_identity/runtime.py.")
+            rt.cuga._model = model
+            rt.cuga._graph = None
+            rt.cuga._compiled_graph = None
 
     # ---- end-user session --------------------------------------------------------
     def login(self, user_id: str) -> str:
@@ -177,7 +275,23 @@ class Showcase:
     # ---- chat ---------------------------------------------------------------------
     async def chat(self, agent_name: str, message: str | None, user_id: str, thread_id: str,
                    approve: bool | None = None) -> ChatTurn:
-        """Send a message (or resume after an approval decision) to a deployed agent."""
+        """Send a message (or resume after an approval decision) to a deployed agent.
+
+        While an engine switch is running the turn waits (it then uses the new engine); a switch
+        waits for turns already running, so no request ever straddles two engines.
+        """
+        await self._ready.wait()
+        self._inflight += 1
+        self._idle.clear()
+        try:
+            return await self._chat(agent_name, message, user_id, thread_id, approve)
+        finally:
+            self._inflight -= 1
+            if self._inflight == 0:
+                self._idle.set()
+
+    async def _chat(self, agent_name: str, message: str | None, user_id: str, thread_id: str,
+                    approve: bool | None = None) -> ChatTurn:
         rt = self.runtimes.get(agent_name)
         if rt is None:
             return ChatTurn(answer="", error=f"Agent '{agent_name}' is not deployed")

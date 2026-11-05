@@ -45,3 +45,31 @@ class DelegationError(TokenValidationError):
 
 class ApprovalRequired(IdentityError):
     """A privileged action was attempted without a human approver (HITL / CIBA)."""
+
+
+class LLMEngineError(Exception):
+    """Base class for LLM-engine problems. Always carries a human-readable ``remediation``."""
+
+    def __init__(self, message: str, remediation: str = "") -> None:
+        super().__init__(message)
+        self.message = message
+        self.remediation = remediation
+
+    def __str__(self) -> str:  # message + hint, so one line in logs / UI is enough
+        return f"{self.message} Hint: {self.remediation}" if self.remediation else self.message
+
+
+class EngineMisconfigured(LLMEngineError):
+    """The engine configuration is invalid or incomplete (bad URL, missing key or model...)."""
+
+
+class EngineUnavailable(LLMEngineError):
+    """The engine is not installed, not running or does not know the requested model."""
+
+
+class EngineConnectionError(LLMEngineError):
+    """The engine endpoint exists but the connection or authentication failed."""
+
+
+class EngineSwitchError(LLMEngineError):
+    """A runtime engine switch could not be completed (the previous engine was restored)."""

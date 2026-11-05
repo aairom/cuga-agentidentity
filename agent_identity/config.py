@@ -37,6 +37,24 @@ class Settings(BaseSettings):
     # "codeact" = the model writes Python that calls tools in Cuga's sandbox.
     execution_mode: Literal["function_calling", "codeact"] = "function_calling"
 
+    # LLM engine selection (see agent_identity/llm_engines.py and Docs/LLM-Engines.md).
+    # "" / "auto" = resolve automatically; otherwise one of ollama | llamacpp | cloud | fake.
+    llm_engine: str = ""
+    # Order tried when the selected engine is unreachable, and for auto-detection.
+    llm_fallback_engines: str = "ollama,llamacpp,cloud"
+    llm_timeout: float = 300.0
+    # Per-engine connection details. Empty = not explicitly configured.
+    ollama_base_url: str = ""
+    ollama_model: str = ""
+    llamacpp_base_url: str = ""
+    llamacpp_model: str = ""
+    llamacpp_binary: str = ""  # optional path to a local llama-server binary (detection only)
+    # Where to look for a running llama.cpp server when no URL is configured (comma separated).
+    llamacpp_probe_urls: str = "http://localhost:8080,http://localhost:9931"
+    cloud_base_url: str = ""
+    cloud_model: str = ""
+    cloud_api_key: SecretStr = SecretStr("")
+
     # App
     log_level: str = "INFO"
     output_dir: str = "output"

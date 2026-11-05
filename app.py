@@ -9,6 +9,7 @@ import os
 
 os.environ.setdefault("LOGURU_LEVEL", "WARNING")
 
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -17,9 +18,10 @@ import streamlit as st
 
 from agent_identity.async_runner import AsyncRunner
 from agent_identity.bootstrap import deploy_all
-from agent_identity.config import apply_llm_env, get_settings
+from agent_identity.config import get_settings
 from agent_identity.data import USERS
-from agent_identity.errors import IdentityError
+from agent_identity.errors import IdentityError, LLMEngineError
+from agent_identity.llm_engines import ENGINES, FAKE_ENGINE, config_from_form
 from agent_identity.logging_setup import get_logger, setup_logging
 from agent_identity.models import AgentStatus
 from agent_identity.runtime import APPROVER, DEVELOPER, Showcase
@@ -31,7 +33,6 @@ from agent_identity.ui_helpers import (
     flow_to_mermaid,
     flow_to_svg,
     inspect_token,
-    probe_ollama,
     registry_rows,
 )
 from agents import SUPERVISOR_NAME, SUPERVISOR_SPEC, WORKER_SPECS
@@ -47,20 +48,13 @@ ALL_SPECS = {**WORKER_SPECS, SUPERVISOR_NAME: SUPERVISOR_SPEC}
 # --------------------------------------------------------------------------------------
 # Shared resources (one per server process)
 # --------------------------------------------------------------------------------------
-@st.cache_resource(show_spinner="Starting the showcase (onboarding and deploying agents)...")
+@st.cache_resource(show_spinner="Starting the showcase (selecting the LLM engine, onboarding and deploying agents)...")
 def get_app() -> dict:
-    """Create the async runner, probe the LLM and deploy all agents once."""
-    apply_llm_env()
-    base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
-    reachable, models = probe_ollama(base_url)
-    wanted = os.environ.get("MODEL_NAME", "")
-    llm_mode = "ollama" if (SETTINGS.llm_mode == "ollama" and reachable) else "fake"
-    settings = SETTINGS.model_copy(update={"llm_mode": llm_mode})
+    """Create the async runner, resolve the LLM engine and deploy all agents once."""
     runner = AsyncRunner()
-    showcase = Showcase(settings=settings)
+    showcase = Showcase(settings=SETTINGS)  # resolves the engine: UI choice > env > detection > fallback
     runner.run(deploy_all(showcase), timeout=600)
-    return {"runner": runner, "sc": showcase, "llm_mode": llm_mode, "llm_reachable": reachable,
-            "models": models, "model_ready": wanted in models, "base_url": base_url, "wanted": wanted}
+    return {"runner": runner, "sc": showcase}
 
 
 APP = get_app()
@@ -76,16 +70,16 @@ def names_by_id() -> dict[str, str]:
 # Sidebar
 # --------------------------------------------------------------------------------------
 PAGES = ["Overview", "How Agent Identity works", "Agent registry and lifecycle", "Chat with agents",
-         "Token inspector", "Audit trail", "Harness Kit validation", "Settings and status"]
+         "Token inspector", "Audit trail", "Harness Kit validation", "LLM engine", "Settings and status"]
 
 with st.sidebar:
     st.title("Cuga + Agent Identity")
     page = st.radio("Navigate", PAGES, label_visibility="collapsed")
     st.divider()
-    if APP["llm_mode"] == "ollama":
-        st.success(f"LLM: {APP['wanted']} (local Ollama)")
+    if SC.engine.engine == FAKE_ENGINE:
+        st.warning("LLM: offline fake model. Chat shows policy and identity decisions only. See the LLM engine page.")
     else:
-        st.warning("LLM: offline fake model. Chat shows policy and identity decisions only.")
+        st.success(f"LLM: {SC.engine.model} ({ENGINES[SC.engine.engine].label}, from {SC.engine.source})")
     st.caption(f"Identity backend: **{SC.settings.identity_backend}**")
     st.caption("License: Apache-2.0")
 
@@ -190,9 +184,10 @@ def _chat_state() -> dict:
 
 def page_chat() -> None:
     st.header("Chat with agents")
-    if APP["llm_mode"] != "ollama":
-        st.warning("No local LLM reachable: answers come from a fake model. Intent guards, approval policies "
-                   "and identity checks still run, but tool selection needs a real model.")
+    if SC.engine.engine == FAKE_ENGINE:
+        st.warning("No LLM engine is active: answers come from a fake model. Intent guards, approval policies "
+                   "and identity checks still run, but tool selection needs a real model. "
+                   "Pick one on the **LLM engine** page.")
     c1, c2 = st.columns(2)
     agent_name = c1.selectbox("Agent", list(ALL_SPECS), format_func=lambda n: ALL_SPECS[n].title)
     user = c2.selectbox("Signed-in user", list(USERS), format_func=lambda u: USERS[u]["name"])  # type: ignore[index]
@@ -326,6 +321,112 @@ def page_harness() -> None:
             st.success(f"Written {p}")
 
 
+def _clear_engine_form() -> None:
+    """Drop the engine form's widget state so the next run shows the newly active values."""
+    for k in [k for k in st.session_state if str(k).startswith("llm_")]:
+        del st.session_state[k]
+
+
+def page_llm_engine() -> None:
+    st.header("LLM engine")
+    st.write("Choose which model backend the agents use. Changes apply to all agents **without a restart**; "
+             "running requests finish first. Conversations, approvals, tokens and the audit trail are kept.")
+    cur = SC.engine
+    (st.warning if cur.engine == FAKE_ENGINE else st.success)(
+        f"Active: **{ENGINES[cur.engine].label}** | model `{cur.model or '-'}` | endpoint `{cur.base_url or '-'}` | "
+        f"selected from **{cur.source}**")
+
+    mgr = SC.engine_manager
+    with st.expander("Detected engines", expanded=True):
+        det = st.session_state.get("detections")
+        if det is None or st.button("Re-scan"):
+            det = st.session_state["detections"] = mgr.detect_all()
+        st.dataframe([{"engine": ENGINES[d.engine].label, "status": d.status, "endpoint": d.endpoint or "-",
+                       "models": ", ".join(d.models[:6]) or "-", "notes": "; ".join(d.notes)}
+                      for d in det.values()], use_container_width=True, hide_index=True)
+
+    ids = [e.engine_id for e in mgr.selectable()]
+    default_idx = ids.index(cur.engine) if cur.engine in ids else 0
+    engine_id = st.selectbox("Engine", ids, index=default_idx, format_func=lambda i: ENGINES[i].label)
+    engine = ENGINES[engine_id]
+    st.caption(engine.description)
+    base = det[engine_id] if det and engine_id in det else None
+    defaults = cur if cur.engine == engine_id else engine.form_defaults(SETTINGS)
+    values: dict[str, str] = {}
+    for f in engine.fields:
+        key = f"llm_{engine_id}_{f.name}"
+        if f.secret:
+            has_env = bool(SETTINGS.cloud_api_key.get_secret_value()) if engine_id == "cloud" else False
+            values[f.name] = st.text_input(f.label, type="password", key=key,
+                                           placeholder="(using the key from .env)" if has_env else "",
+                                           help=f.help + ". Leave empty to use the key from the environment.")
+        else:
+            values[f.name] = st.text_input(f.label + (" *" if f.required else ""), value=getattr(defaults, f.name), key=key, help=f.help)
+    if base and base.models and "model" in values:
+        st.caption("Models reported by the server: " + ", ".join(base.models[:12]))
+    remember = st.checkbox("Remember this choice (saves engine, URL and model to .cuga_state/; the API key is never saved)",
+                           value=True)
+
+    c1, c2, c3 = st.columns(3)
+    result_box = st.container()
+    try:
+        cfg = config_from_form(engine_id, values, SETTINGS)
+        form_error = None
+    except LLMEngineError as exc:
+        cfg, form_error = None, exc
+    if form_error:
+        st.error(f"{form_error.message}")
+        if form_error.remediation:
+            st.info(f"How to fix: {form_error.remediation}")
+    # A test result is only valid for the exact form values it was run with. The signature is a
+    # hash, so a typed API key is never kept in session state in plaintext.
+    sig = hashlib.sha256(repr(sorted((k, str(v)) for k, v in values.items())).encode()).hexdigest()
+    if c1.button("Test connection", disabled=cfg is None):
+        with st.spinner("Contacting the engine..."):
+            st.session_state["engine_test"] = (engine_id, sig, mgr.test(cfg))
+    if c2.button("Apply and activate", type="primary", disabled=cfg is None):
+        with st.spinner("Testing, draining running requests and switching..."):
+            try:
+                new = RUNNER.run(SC.switch_engine(cfg), timeout=180)
+                st.session_state.pop("engine_test", None)
+                _clear_engine_form()
+                if remember:
+                    mgr.save_override(new)
+                st.session_state["engine_msg"] = ("ok", f"Now using {ENGINES[new.engine].label} / {new.model}.", "")
+            except LLMEngineError as exc:
+                st.session_state["engine_msg"] = ("error", exc.message, exc.remediation + " The previous engine is still active.")
+        st.rerun()
+    if c3.button("Reset to .env defaults"):
+        mgr.clear_override()
+        st.session_state.pop("engine_test", None)
+        res = mgr.resolve()
+        try:
+            RUNNER.run(SC.switch_engine(res.config), timeout=180)
+            _clear_engine_form()
+            st.session_state["engine_msg"] = ("ok", f"Back to {res.config.describe()}.", " ".join(res.warnings))
+        except LLMEngineError as exc:
+            st.session_state["engine_msg"] = ("error", exc.message, exc.remediation)
+        st.rerun()
+
+    test = st.session_state.get("engine_test")
+    with result_box:
+        if test and test[0] == engine_id and test[1] == sig:
+            r = test[2]
+            if r.ok:
+                st.success(f"{r.message} ({r.latency_ms} ms)")
+            else:
+                st.error(r.message)
+                if r.remediation:
+                    st.info(f"How to fix: {r.remediation}")
+        msg = st.session_state.pop("engine_msg", None)
+        if msg:
+            (st.success if msg[0] == "ok" else st.error)(msg[1])
+            if msg[2].strip():
+                st.info(msg[2].strip())
+    if engine_id == "llamacpp":
+        st.caption("Tool calling needs a server started with chat-template support, e.g. `llama-server -m model.gguf --jinja --port 8080`.")
+
+
 def page_settings() -> None:
     st.header("Settings and status")
     st.json({
@@ -334,16 +435,12 @@ def page_settings() -> None:
         "token_ttl_seconds": SC.settings.token_ttl_seconds,
         "strict_status_check": SC.settings.strict_status_check,
         "execution_mode": SC.settings.execution_mode,
-        "llm_mode": APP["llm_mode"],
-        "ollama_reachable": APP["llm_reachable"],
-        "model_requested": APP["wanted"],
-        "model_available": APP["model_ready"],
-        "models_installed": APP["models"],
-        "llm_base_url": APP["base_url"],
+        "llm_engine": SC.engine.public_dict(),
         "output_dir": SC.settings.output_dir,
         "ui_port": SC.settings.ui_port,
     })
-    st.caption("Configure through environment variables or .env (see .env.example). Restart to apply.")
+    st.caption("Identity settings come from environment variables or .env (restart to apply). "
+               "The LLM engine can be changed at runtime on the **LLM engine** page.")
     with st.expander("Registered tools per agent"):
         st.json({n: [t.name for t in (spec.tool_builder(SC.gateway, SC.store, n) if spec.tool_builder else [])]
                  for n, spec in ALL_SPECS.items()})
@@ -359,6 +456,7 @@ PAGE_FUNCS = {
     "Token inspector": page_tokens,
     "Audit trail": page_audit,
     "Harness Kit validation": page_harness,
+    "LLM engine": page_llm_engine,
     "Settings and status": page_settings,
 }
 PAGE_FUNCS[page]()

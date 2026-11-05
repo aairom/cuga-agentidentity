@@ -142,6 +142,12 @@ Use a fake chat model and the mock identity service so tests are fast and determ
 - Keep tool docstrings short and imperative; they are the model's only manual.
 - Tell the model what to do on denial ("report it verbatim, do not retry") in the agent instructions.
 
+## 15. Treat LLM engine settings as configuration, not state
+
+- Keep cloud API keys in `.env` (`SecretStr`); the UI override file stores engine, URL and model only, never a key.
+- Test an engine before switching; roll back to the previous one on any failure so a bad setting cannot take the agents down.
+- Refuse plain `http://` for remote hosts; require `https://` for cloud endpoints.
+
 ## Production checklist
 
 - [ ] Replace `MockVerifyBackend` with a tested real backend and real secrets from a vault.
@@ -149,4 +155,5 @@ Use a fake chat model and the mock identity service so tests are fast and determ
 - [ ] Keep token lifetimes at minutes; privileged tokens at seconds.
 - [ ] Persist the audit log somewhere append-only.
 - [ ] Run the conformance scenarios in CI.
+- [ ] Supply cloud LLM keys from a vault, never from the UI.
 - [ ] Review the scope ceiling of every agent at each approval.
