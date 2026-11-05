@@ -99,6 +99,18 @@ Tip: Cuga's `function_calling` mode needs a model that follows the tool protocol
 6. **Audit trail**: allow and deny decisions, keyed by Agent ID. Export to `output/`.
 7. **Harness Kit validation**: scaffold the kit's skills and run the conformance scenarios.
 
+### Read the interactive guide
+
+`Docs/AgentIdentity-Showcase.html` is a standalone page with the architecture, the agent lifecycle state machine, the LLM engine layer and the validation results. It needs no server and no internet (Mermaid is bundled in `Docs/assets/`).
+
+```bash
+open Docs/AgentIdentity-Showcase.html          # macOS; use xdg-open on Linux
+# or serve it locally
+python3 -m http.server 8602 --bind 127.0.0.1   # then open http://127.0.0.1:8602/Docs/AgentIdentity-Showcase.html
+```
+
+Use "Plain-language view" for a non-technical reading. Screenshots load from `../.bob/artifacts/`, so keep that folder next to `Docs/`. Stop the server with Ctrl+C.
+
 ## 6. Run without the UI
 
 ```bash

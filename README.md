@@ -191,12 +191,13 @@ agents/                   example agents (learning_coach, revenue_analyst, ops_s
 harness/                  Harness Kit integration + conformance scenarios
 tests/                    pytest suite (offline, fake LLM)
 scripts/                  start, stop, setup, test, cleanup, container helpers
-Docs/                     Quickstart, Architecture, concepts, best practices
+Docs/                     Quickstart, Architecture, concepts, best practices, interactive showcase page (HTML)
 input/  output/           input folder and timestamped results (contents are git-ignored)
 ```
 
 ## Documentation
 
+- [`Docs/AgentIdentity-Showcase.html`](Docs/AgentIdentity-Showcase.html): one interactive page for technical and non-technical readers. Introduction, architecture, agent lifecycle, LLM engine layer, validation results. Works offline (Mermaid is bundled in `Docs/assets/`); screenshots load from `.bob/artifacts/`. Open it with `open Docs/AgentIdentity-Showcase.html`.
 - [`Docs/Quickstart.md`](Docs/Quickstart.md): run it, try it, clean it up.
 - [`Docs/Architecture.md`](Docs/Architecture.md): components and all six identity flows as Mermaid diagrams.
 - [`Docs/AgentIdentity-Concepts.md`](Docs/AgentIdentity-Concepts.md): the identity model explained.

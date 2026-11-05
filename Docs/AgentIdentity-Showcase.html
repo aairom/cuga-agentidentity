@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cuga + Agent Identity showcase: interactive guide</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230f62fe%27/%3E%3Ccircle cx=%2716%27 cy=%2712%27 r=%275%27 fill=%27%23fff%27/%3E%3Cpath d=%27M7 26c0-5 4-8 9-8s9 3 9 8z%27 fill=%27%23fff%27/%3E%3C/svg%3E">
+<meta name="description" content="Interactive guide to the Cuga + Agent Identity showcase: what Agent Identity is, the architecture, the agent lifecycle, the LLM engine layer and the validation results.">
+<style>
+:root{
+  --bg:#ffffff; --surface:#f4f6fa; --surface2:#eaeef6; --border:#d8dee9; --text:#161a22; --muted:#525d70;
+  --accent:#0f62fe; --accent-soft:#e5eeff; --ok:#0e7a3b; --ok-soft:#e2f5ea; --warn:#8a5a00; --warn-soft:#fff3d6;
+  --bad:#b3261e; --bad-soft:#fde8e6; --info:#5a3fc0; --info-soft:#eee9fb; --code-bg:#161b26; --code-fg:#e6eaf2;
+  --radius:10px; --nav-w:260px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:76px}
+body{margin:0;font:16px/1.65 -apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;color:var(--text);background:var(--bg)}
+a{color:var(--accent)} a:hover{text-decoration:none}
+code,pre,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em}
+:not(pre)>code{background:var(--surface2);padding:.12em .4em;border-radius:5px}
+h1,h2,h3,h4{line-height:1.25;margin:0 0 .6em}
+h2{font-size:1.65rem;margin-top:0} h3{font-size:1.2rem;margin-top:1.8em} h4{font-size:1rem}
+p{margin:.2em 0 1em} ul,ol{margin:.2em 0 1em;padding-left:1.4em} li{margin:.25em 0}
+
+/* ---------- layout ---------- */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(255,255,255,.96);border-bottom:1px solid var(--border);backdrop-filter:blur(6px)}
+.topbar .brand{font-weight:650;white-space:nowrap}
+.topbar .spacer{flex:1}
+.topbar .menu-btn{display:none}
+.layout{display:flex;max-width:1380px;margin:0 auto}
+nav.side{position:sticky;top:57px;align-self:flex-start;width:var(--nav-w);height:calc(100vh - 57px);overflow:auto;padding:22px 14px 40px 20px;border-right:1px solid var(--border);flex-shrink:0}
+nav.side h2{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+nav.side a{display:block;padding:6px 10px;margin:1px 0;border-radius:7px;color:var(--text);text-decoration:none;font-size:.93rem;border-left:3px solid transparent}
+nav.side a:hover{background:var(--surface)}
+nav.side a.active{background:var(--accent-soft);border-left-color:var(--accent);color:#0a3fa8;font-weight:600}
+nav.side a.sub{margin-left:14px;font-size:.86rem;color:var(--muted)}
+main{flex:1;min-width:0;padding:0 36px 80px}
+section.sec{padding:44px 0 12px;border-bottom:1px solid var(--border)}
+section.sec:last-of-type{border-bottom:0}
+.sec-num{display:inline-block;font-size:.78rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+
+/* ---------- hero ---------- */
+.hero{padding:44px 0 28px;border-bottom:1px solid var(--border)}
+.hero h1{font-size:2.3rem;margin-bottom:.35em}
+.hero .lead{font-size:1.15rem;color:var(--muted);max-width:62ch}
+.pills{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:22px 0 4px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.stat b{display:block;font-size:1.7rem;line-height:1.1;color:var(--accent)}
+.stat span{font-size:.85rem;color:var(--muted)}
+
+/* ---------- components ---------- */
+.badge{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:600;border:1px solid transparent;white-space:nowrap;vertical-align:middle}
+.badge::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.b-ok{background:var(--ok-soft);color:var(--ok);border-color:#b5e0c5}
+.b-test{background:var(--accent-soft);color:#0a3fa8;border-color:#bcd2ff}
+.b-warn{background:var(--warn-soft);color:var(--warn);border-color:#f0d691}
+.b-bad{background:var(--bad-soft);color:var(--bad);border-color:#f3b8b3}
+.b-sim{background:var(--info-soft);color:var(--info);border-color:#d3c8f5}
+.chip{display:inline-block;padding:3px 11px;border-radius:999px;background:var(--surface2);font-size:.82rem;color:var(--text);text-decoration:none;border:1px solid var(--border)}
+a.chip:hover{border-color:var(--accent);color:var(--accent)}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin:12px 0 18px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px}
+.card h4{margin-bottom:.3em} .card p{margin:0 0 .5em;font-size:.94rem} .card p:last-child{margin-bottom:0}
+.card .kicker{font-size:.74rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 var(--radius) var(--radius) 0;padding:12px 16px;margin:16px 0}
+.callout.warn{border-color:#d49a00;background:var(--warn-soft)} .callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout p:last-child{margin-bottom:0} .callout strong:first-child{display:block;margin-bottom:2px}
+table{border-collapse:collapse;width:100%;margin:10px 0 20px;font-size:.92rem}
+.tbl{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin:10px 0 20px}
+.tbl table{margin:0}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--border);vertical-align:top}
+th{background:var(--surface);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+
+/* collapsible */
+details.fold{border:1px solid var(--border);border-radius:var(--radius);margin:12px 0;background:#fff}
+details.fold>summary{cursor:pointer;list-style:none;padding:12px 16px;font-weight:600;display:flex;align-items:center;gap:10px;border-radius:var(--radius)}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;flex-shrink:0}
+details.fold[open]>summary::before{transform:rotate(45deg)}
+details.fold>summary:hover{background:var(--surface)}
+details.fold>summary:focus-visible,button:focus-visible,a:focus-visible,.tab:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+details.fold>.body{padding:4px 18px 14px;border-top:1px solid var(--border)}
+details.fold>summary .badge{margin-left:auto}
+
+/* diagrams */
+figure.diagram{margin:16px 0 22px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;overflow:hidden}
+figure.diagram figcaption{padding:9px 16px;background:var(--surface);border-bottom:1px solid var(--border);font-size:.86rem;font-weight:600;display:flex;gap:10px;align-items:center}
+figure.diagram figcaption .grow{flex:1}
+figure.diagram .canvas{padding:18px;overflow:auto;text-align:center}
+figure.diagram .canvas svg{max-width:100%;height:auto}
+.mermaid:not([data-processed]){visibility:hidden;min-height:60px}
+.diagram-error{color:var(--bad);background:var(--bad-soft);padding:10px 14px;border-radius:8px;text-align:left;font-size:.9rem}
+button,.btn{font:inherit;font-size:.85rem;padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff} button.primary:hover{background:#0a4fd1;color:#fff}
+
+/* code */
+.code{position:relative;margin:12px 0 18px;border-radius:var(--radius);background:var(--code-bg);overflow:hidden}
+.code .cap{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;background:#222a3a;color:#aab4c8;font-size:.76rem;letter-spacing:.04em}
+.code pre{margin:0;padding:14px 16px;overflow:auto;color:var(--code-fg);line-height:1.55}
+.code button{background:#2d3750;border-color:#3b4767;color:#dbe3f5;font-size:.74rem;padding:2px 9px}
+.code button:hover{background:#3b4767;color:#fff}
+.tk-c{color:#8a96b0} .tk-k{color:#7fb2ff} .tk-s{color:#9fe0b0} .tk-n{color:#ffcf8a}
+
+/* tabs */
+.tabs{margin:14px 0 20px}
+.tablist{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.tab{font:inherit;font-size:.9rem;padding:8px 14px;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;background:transparent;cursor:pointer;color:var(--muted)}
+.tab[aria-selected="true"]{background:#fff;border-color:var(--border);color:var(--accent);font-weight:600;position:relative;top:1px}
+.tabpanel{padding:16px 4px 0}
+.tabpanel[hidden]{display:none}
+
+/* lifecycle explorer */
+.states{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.state-btn{padding:8px 16px;font-weight:600}
+.state-btn[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+.state-panel{border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;background:var(--surface)}
+
+/* bars */
+.bars{margin:10px 0 20px}
+.bar-row{display:grid;grid-template-columns:210px 1fr 40px;gap:12px;align-items:center;margin:6px 0;font-size:.9rem}
+.bar-row .track{background:var(--surface2);border-radius:6px;height:16px;overflow:hidden}
+.bar-row .fill{display:block;height:100%;background:linear-gradient(90deg,#0f62fe,#4589ff);border-radius:6px}
+.bar-row code{background:none;padding:0}
+
+/* engine resolver */
+.sim{border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;background:var(--surface)}
+.sim .row{display:flex;flex-wrap:wrap;gap:12px 22px;margin-bottom:12px}
+.sim label{display:flex;align-items:center;gap:7px;font-size:.92rem}
+.sim select{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--border)}
+.sim ol{margin-bottom:6px} .sim .result{font-weight:600}
+.sim li.skip{color:var(--muted);text-decoration:line-through} .sim li.win{color:var(--ok);font-weight:600}
+
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.shots figure{margin:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:#fff}
+.shots img{display:block;width:100%;height:auto;aspect-ratio:2400/1792;cursor:zoom-in}
+.shots figcaption{padding:8px 12px;font-size:.83rem;color:var(--muted);border-top:1px solid var(--border)}
+.lightbox{position:fixed;inset:0;background:rgba(10,14,22,.85);display:none;align-items:center;justify-content:center;z-index:100;padding:24px;cursor:zoom-out}
+.lightbox.on{display:flex} .lightbox img{max-width:100%;max-height:100%;border-radius:8px;background:#fff}
+
+footer{max-width:1380px;margin:0 auto;padding:26px 36px 40px;border-top:1px solid var(--border);color:var(--muted);font-size:.86rem}
+.simple-only{display:none} body.simple .simple-only{display:block} body.simple .tech{display:none!important}
+#progress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--accent);z-index:60}
+.skip-link{position:absolute;left:-999px;top:0;background:#fff;padding:8px 12px;z-index:200} .skip-link:focus{left:8px;top:8px}
+
+@media (max-width:980px){
+  nav.side{position:fixed;left:0;top:57px;z-index:70;background:#fff;transform:translateX(-100%);transition:transform .2s;box-shadow:4px 0 20px rgba(0,0,0,.15)}
+  nav.side.open{transform:none}
+  .topbar .menu-btn{display:inline-block}
+  main{padding:0 18px 60px}
+  .bar-row{grid-template-columns:130px 1fr 34px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+@media print{
+  .topbar,nav.side,#progress,.code button,.tools{display:none!important}
+  main{padding:0} details.fold>.body{display:block} body{font-size:11pt}
+  figure.diagram,.card,.code{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div id="progress" aria-hidden="true"></div>
+
+<header class="topbar">
+  <button class="menu-btn" id="menuBtn" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidenav">Menu</button>
+  <span class="brand">Cuga + Agent Identity showcase</span>
+  <span class="spacer"></span>
+  <span class="tools" style="display:flex;gap:8px;flex-wrap:wrap">
+    <button id="audBtn" aria-pressed="false" title="Hide implementation detail for a shorter read">Plain-language view</button>
+    <button id="expandBtn">Expand all</button>
+    <button id="collapseBtn">Collapse all</button>
+  </span>
+</header>
+
+<div class="layout">
+<nav class="side" id="sidenav" aria-label="Sections">
+  <h2>On this page</h2>
+  <a href="#top">Start</a>
+  <a href="#intro">1. Introduction</a>
+  <a class="sub" href="#what">What it is</a>
+  <a class="sub" href="#used-for">What it is used for</a>
+  <a class="sub" href="#benefits">Benefits and use cases</a>
+  <a href="#overview">2. Application overview</a>
+  <a class="sub" href="#goals">Goals and scope</a>
+  <a class="sub" href="#integrations">Integration points</a>
+  <a class="sub" href="#components">Core components</a>
+  <a href="#architecture">3. Architecture</a>
+  <a class="sub" href="#component-view">Component view</a>
+  <a class="sub" href="#request-flow">One delegated request</a>
+  <a class="sub" href="#llm-layer">LLM engine layer</a>
+  <a class="sub" href="#llm-config">Configuration and switching</a>
+  <a href="#lifecycle">4. Agent lifecycle</a>
+  <a class="sub" href="#state-machine">State machine</a>
+  <a class="sub" href="#status-map">Status to code</a>
+  <a href="#features">5. Features</a>
+  <a class="sub" href="#feature-status">Status of each feature</a>
+  <a class="sub" href="#validation">Validation results</a>
+  <a href="#technical">6. Technical details</a>
+  <a class="sub" href="#tests">Test coverage</a>
+  <a class="sub" href="#demo">Demo and output</a>
+  <a class="sub" href="#run">Start and stop</a>
+  <a href="#limits">7. Honest limits</a>
+  <a href="#gallery">Screenshots</a>
+  <a href="#sources">Sources</a>
+</nav>
+
+<main id="main">
+<div class="hero" id="top">
+  <span class="sec-num">Interactive guide</span>
+  <h1>Giving AI agents a governed identity</h1>
+  <p class="lead">A runnable reference that shows how to create, approve, deploy, test and switch off AI agents so that every action can be traced to one agent, one person and one permission.</p>
+  <div class="pills">
+    <a class="chip" href="https://github.com/cuga-project/cuga-agent">cuga-agent 0.4.5</a>
+    <a class="chip" href="https://github.com/cuga-project">cuga-project</a>
+    <a class="chip" href="https://github.com/cuga-project/cuga-harness-kit">cuga-harness-kit 0.2.0</a>
+    <a class="chip" href="https://www.ibm.com/products/agent-identity">IBM Agent Identity</a>
+    <span class="chip">Apache-2.0</span>
+  </div>
+  <div class="stats" aria-label="Key figures">
+    <div class="stat"><b>4</b><span>example agents</span></div>
+    <div class="stat"><b>118</b><span>unit tests passing</span></div>
+    <div class="stat"><b>10 / 10</b><span>harness scenarios pass</span></div>
+    <div class="stat"><b>9</b><span>Streamlit pages</span></div>
+    <div class="stat"><b>3</b><span>selectable LLM engines</span></div>
+  </div>
+  <div class="callout warn" style="margin-top:18px">
+    <strong>What is real and what is simulated</strong>
+    <p>Cuga Agent is used for real. IBM Agent Identity has no public SDK, so the identity service is a <b>local mock</b> of IBM Verify (<span class="badge b-sim">simulated</span>). The engine layer was exercised live against Ollama only; llama.cpp and cloud were tested with mocked HTTP. Section 7 lists every limit.</p>
+  </div>
+</div>
+
+<!-- ===================================================== 1. INTRODUCTION -->
+<section class="sec" id="intro">
+  <span class="sec-num">Section 1</span>
+  <h2>Introduction</h2>
+
+  <h3 id="what">What Agent Identity is</h3>
+  <p>An AI agent acts on its own: it reads data, calls tools and sometimes changes things. <b>Agent Identity</b> gives each agent its own verifiable identity in the same way a company gives each employee a badge. The agent is registered, approved by a different person, and then proves who it is on every call.</p>
+  <p>Its core purpose is to answer four questions about every action an agent takes:</p>
+  <div class="grid">
+    <div class="card"><span class="kicker">Accountability</span><h4>Who did it?</h4><p>Every call carries the Agent ID, so the audit log tells one story per agent.</p></div>
+    <div class="card"><span class="kicker">Least privilege</span><h4>What may it do?</h4><p>A scope ceiling is set at approval time. A token can never exceed it.</p></div>
+    <div class="card"><span class="kicker">Delegation</span><h4>For whom?</h4><p>When acting for a person, the token says so: the person is the subject and the agent is the actor.</p></div>
+    <div class="card"><span class="kicker">Control</span><h4>Can we stop it?</h4><p>Suspending the agent (the kill switch) stops it, without breaking other agents.</p></div>
+  </div>
+
+  <h3 id="used-for">What it is used for, in practical terms</h3>
+  <p class="simple-only">Without an identity, an agent borrows someone's password or a shared account. Nobody can tell who did what, and the only way to stop a misbehaving agent is to stop everything. With an identity, each agent has its own badge, its own limits and its own off switch.</p>
+  <div class="tech">
+  <div class="tabs" data-tabs>
+    <div class="tablist" role="tablist" aria-label="Agent access patterns">
+      <button class="tab" role="tab" aria-selected="true" id="t1" aria-controls="p1">Autonomous</button>
+      <button class="tab" role="tab" aria-selected="false" id="t2" aria-controls="p2" tabindex="-1">On behalf of a user</button>
+      <button class="tab" role="tab" aria-selected="false" id="t3" aria-controls="p3" tabindex="-1">Privileged action</button>
+      <button class="tab" role="tab" aria-selected="false" id="t4" aria-controls="p4" tabindex="-1">Agent chain</button>
+    </div>
+    <div class="tabpanel" role="tabpanel" id="p1" aria-labelledby="t1">
+      <p><b>The agent acts as itself.</b> It gets a token through the OAuth <code>client_credentials</code> grant. The token carries <code>agent_id</code>. Example: the <b>Revenue Analyst</b> reads CRM data with a read-only ceiling (<code>crm:read</code>).</p>
+    </div>
+    <div class="tabpanel" role="tabpanel" id="p2" aria-labelledby="t2" hidden>
+      <p><b>The agent acts for the signed-in person.</b> The gateway exchanges the user's token for a delegated token (RFC 8693): <code>sub</code> is the user, <code>act.sub</code> is the agent. The effective scope is the <b>intersection</b> of what the user may do and what the agent may do. Example: the <b>Learning Coach</b> enrols Carol in a course.</p>
+    </div>
+    <div class="tabpanel" role="tabpanel" id="p3" aria-labelledby="t3" hidden>
+      <p><b>Risky actions need a person and a narrow token.</b> A human approves the tool call, then the gateway mints a very short-lived token whose <code>authorization_details</code> name the exact action. Examples: an expensive course enrolment, or a service restart by the <b>Ops SRE Assistant</b>.</p>
+    </div>
+    <div class="tabpanel" role="tabpanel" id="p4" aria-labelledby="t4" hidden>
+      <p><b>One agent delegates to another.</b> The <b>Workplace Supervisor</b> hands work to a worker agent and the token keeps the chain as nested <code>act</code> claims, so an auditor can see "user, then supervisor, then worker".</p>
+    </div>
+  </div>
+  </div>
+
+  <h3 id="benefits">Key benefits and use cases</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Benefit</th><th>What it means in practice</th><th>Where you see it here</th></tr></thead>
+    <tbody>
+      <tr><td>Traceability</td><td>One audit trail per agent, keyed by Agent ID.</td><td>Audit trail page; <code>audit.correlation</code> scenario</td></tr>
+      <tr><td>Least privilege</td><td>Read-only agents cannot write, even if a write tool exists.</td><td>Revenue Analyst; <code>scope.agent_ceiling</code></td></tr>
+      <tr><td>Safe delegation</td><td>An agent can never do more than the person it acts for.</td><td>Learning Coach; <code>scope.user_ceiling</code></td></tr>
+      <tr><td>Separation of duties</td><td>The creator of an agent cannot approve it.</td><td>Registry page; <code>SeparationOfDutiesError</code></td></tr>
+      <tr><td>Fast containment</td><td>Suspend one agent without touching the rest.</td><td>Kill switch flow; <code>kill_switch</code> scenario</td></tr>
+      <tr><td>Defence in depth</td><td>Policies before the model, identity checks inside every tool.</td><td>Cuga guards + gateway</td></tr>
+    </tbody>
+  </table></div>
+  <details class="fold">
+    <summary>Typical use cases <span class="badge b-test">4 examples</span></summary>
+    <div class="body">
+      <ul>
+        <li><b>HR self-service:</b> an assistant enrols employees in training, asking for approval above a cost limit.</li>
+        <li><b>Sales analytics:</b> a read-only agent summarises revenue and cannot export the customer base.</li>
+        <li><b>IT operations:</b> an assistant restarts a service only after approval, with a token that lives for seconds.</li>
+        <li><b>Multi-agent workplace:</b> a supervisor routes requests and the full chain of responsibility is kept.</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ===================================================== 2. OVERVIEW -->
+<section class="sec" id="overview">
+  <span class="sec-num">Section 2</span>
+  <h2>Application overview</h2>
+
+  <h3 id="goals">Project goals and scope</h3>
+  <div class="grid">
+    <div class="card"><span class="kicker">Goal</span><h4>Teach</h4><p>Explain Agent Identity with six interactive flows, a token inspector and an audit trail.</p></div>
+    <div class="card"><span class="kicker">Goal</span><h4>Provide a reference</h4><p>Typed config, structured logging, error handling and tests that developers can copy.</p></div>
+    <div class="card"><span class="kicker">Goal</span><h4>Run anywhere locally</h4><p>No cloud dependency. A fake model lets tests and the demo run offline.</p></div>
+  </div>
+  <div class="grid">
+    <div class="card"><h4>In scope</h4><ul><li>Agent lifecycle and OAuth client registration</li><li>Autonomous, delegated, privileged and chained access</li><li>Cuga policies and human approval</li><li>Pluggable LLM engines</li><li>Conformance scenarios and Harness Kit</li></ul></div>
+    <div class="card"><h4>Out of scope</h4><ul><li>A live IBM Verify tenant (a reference HTTP backend exists, untested)</li><li>Production secret storage</li><li>Multi-user hosting of the UI</li></ul></div>
+  </div>
+
+  <h3 id="integrations">Integration points</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Integration</th><th>Role in the project</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://github.com/cuga-project/cuga-agent">cuga-agent</a></td><td>Runs every agent: tools, intent-guard and tool-approval policies, human-in-the-loop resume, supervisor delegation (<code>cuga==0.4.5</code>).</td><td><span class="badge b-ok">Used for real</span></td></tr>
+      <tr><td><a href="https://github.com/cuga-project">cuga-project</a></td><td>The GitHub organisation behind the Cuga ecosystem; the source of the two packages here.</td><td><span class="badge b-ok">Referenced</span></td></tr>
+      <tr><td><a href="https://github.com/cuga-project/cuga-harness-kit">cuga-harness-kit</a></td><td>Scaffolds 11 agent-building skills for coding assistants. It is not a test runner, so the project adds its own 10 conformance scenarios.</td><td><span class="badge b-ok">Used for real</span></td></tr>
+      <tr><td><a href="https://www.ibm.com/products/agent-identity">IBM Agent Identity</a></td><td>The identity model the showcase implements: agent registry, separation of duties, OAuth clients, token exchange.</td><td><span class="badge b-sim">Simulated locally</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="components">Core components</h3>
+  <div class="grid">
+    <div class="card"><span class="kicker">Agents</span><h4>Four agents</h4>
+      <p><b>Learning Coach</b>: on behalf of a user, with approval.</p>
+      <p><b>Revenue Analyst</b>: autonomous, read-only.</p>
+      <p><b>Ops SRE Assistant</b>: privileged restart.</p>
+      <p><b>Workplace Supervisor</b>: delegates to the others.</p></div>
+    <div class="card"><span class="kicker">Interface</span><h4>Streamlit UI</h4><p>Nine pages on port 8601: Overview, How Agent Identity works, Agent registry and lifecycle, Chat with agents, Token inspector, Audit trail, Harness Kit validation, LLM engine, Settings and status.</p></div>
+    <div class="card"><span class="kicker">Validation</span><h4>Harness</h4><p><code>python -m harness</code> scaffolds the 11 Harness Kit skills into a temporary folder and runs 10 conformance scenarios. Reports go to <code>output/</code>.</p></div>
+    <div class="card"><span class="kicker">Knowledge</span><h4>Documentation</h4><p><code>README.md</code>, <code>Docs/Quickstart.md</code>, <code>Docs/Architecture.md</code>, <code>Docs/AgentIdentity-Concepts.md</code>, <code>Docs/BestPractices.md</code> and this page.</p></div>
+  </div>
+  <details class="fold tech">
+    <summary>Project layout <span class="badge b-test">source map</span></summary>
+    <div class="body">
+<div class="code"><div class="cap"><span>text</span><button data-copy>Copy</button></div><pre>app.py                    Streamlit UI (9 pages)
+demo.py                   CLI demo, writes output/demo_&lt;timestamp&gt;.md
+agent_identity/           config, backend, tokens, lifecycle, gateway, tools,
+                          runtime, llm_engines, errors, audit, ui_helpers
+agents/                   learning_coach, revenue_analyst, ops_sre_assistant
+harness/                  Harness Kit integration + conformance scenarios
+tests/                    pytest suite (offline, fake LLM)
+scripts/                  setup, start, stop, test, cleanup, container helpers
+Docs/                     Quickstart, Architecture, concepts, best practices</pre></div>
+    </div>
+  </details>
+</section>
+
+<!-- ===================================================== 3. ARCHITECTURE -->
+<section class="sec" id="architecture">
+  <span class="sec-num">Section 3</span>
+  <h2>Architecture</h2>
+
+  <h3 id="component-view">Component view</h3>
+  <p>The UI talks to one facade, <code>Showcase</code>. Cuga runs the agents. Every tool call passes through the identity gateway, which asks the identity service for a token and validates it before any business logic runs.</p>
+  <figure class="diagram">
+    <figcaption><span class="grow">Component view: how the modules relate</span><span class="badge b-ok">renders</span></figcaption>
+    <div class="canvas"><pre class="mermaid">
+flowchart LR
+    User([End user]) --> UI["Streamlit UI<br/>app.py"]
+    UI --> SC["Showcase facade<br/>runtime.py"]
+    SC --> CUGA["Cuga agents<br/>policies + tools"]
+    CUGA -->|tool call| GW["Identity gateway<br/>gateway.py"]
+    GW -->|mint token| SVC["AgentIdentityService<br/>lifecycle.py"]
+    SVC --> BE{{Identity backend}}
+    BE --> MOCK["MockVerifyBackend<br/>default"]
+    BE --> HTTP["HttpVerifyBackend<br/>real tenant, untested"]
+    GW -->|validate| TV["TokenValidator<br/>sig, aud, exp, scope, status"]
+    TV --> TOOLS[("Business data<br/>courses, CRM, services")]
+    SVC --> AUD[("Audit log<br/>keyed by Agent ID")]
+    TV --> AUD
+    CUGA -.->|shared model| ENG["LLM engine layer<br/>llm_engines.py"]
+    ENG -.-> OLL[Ollama]
+    ENG -.-> LCP["llama.cpp"]
+    ENG -.-> CLD["Cloud OpenAI-compatible"]
+    HK["Harness Kit +<br/>conformance scenarios"] --> SC
+    </pre></div>
+  </figure>
+  <div class="callout"><strong>Two layers of control</strong><p>Cuga policies (intent guard, tool approval) run <i>before</i> a tool is called and shape what the agent attempts. Identity checks (signature, audience, expiry, scope, agent status) run <i>inside</i> every tool and decide what is allowed. Neither replaces the other, and the model never sees a token.</p></div>
+
+  <h3 id="request-flow">One delegated request, step by step</h3>
+  <figure class="diagram">
+    <figcaption><span class="grow">"Enroll me in SEC301": on-behalf-of with human approval</span><span class="badge b-ok">renders</span></figcaption>
+    <div class="canvas"><pre class="mermaid">
+sequenceDiagram
+    participant U as User (Carol)
+    participant C as Cuga agent
+    participant G as Identity gateway
+    participant I as Identity service
+    participant T as Tool or API
+    U->>C: Enroll me in SEC301
+    C->>C: intent guard, then approval policy
+    C-->>U: needs approval (human in the loop)
+    U->>C: Approve
+    C->>G: tool call enroll_expensive_course
+    G->>I: token exchange (user token + agent credentials)
+    I-->>G: JWT sub=carol, act.sub=agent, authorization_details
+    G->>T: validated call (scope, status, privileged)
+    T-->>C: result
+    C-->>U: answer (audit written under the Agent ID)
+    </pre></div>
+  </figure>
+
+  <h3 id="llm-layer">LLM engine layer</h3>
+  <p class="simple-only">The agents need a language model to understand requests. You can choose where it runs: on your own computer (Ollama or llama.cpp) or at a cloud provider. You can change the choice in the UI while the application runs.</p>
+  <p>All agents share one chat model. Which backend provides it is chosen at start-up and can be changed at any time from the <b>LLM engine</b> page.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Engine</th><th>Id</th><th>Talks to</th><th>Needs</th><th>Verified</th></tr></thead>
+    <tbody>
+      <tr><td><b>Ollama</b> (local, default)</td><td><code>ollama</code></td><td><code>AI_OLLAMA_BASE_URL</code>, default <code>http://localhost:11434</code></td><td>A running daemon and <code>ollama pull &lt;model&gt;</code></td><td><span class="badge b-ok">Live</span></td></tr>
+      <tr><td><b>llama.cpp</b></td><td><code>llamacpp</code></td><td><code>llama-server</code> OpenAI-compatible API</td><td><code>llama-server -m model.gguf --jinja --port 8080</code> (<code>--jinja</code> enables tool calling)</td><td><span class="badge b-warn">Mocked HTTP; failure path live</span></td></tr>
+      <tr><td><b>Cloud</b></td><td><code>cloud</code></td><td>Any OpenAI-compatible hosted API</td><td>URL, model and API key; <code>https://</code> for remote hosts</td><td><span class="badge b-warn">Mocked HTTP only</span></td></tr>
+      <tr><td><b>Fake</b></td><td><code>fake</code></td><td>Nothing (deterministic, offline)</td><td>Used by tests, the harness and <code>demo.py</code></td><td><span class="badge b-ok">Live</span></td></tr>
+    </tbody>
+  </table></div>
+  <figure class="diagram">
+    <figcaption><span class="grow">Engine layer: classes and responsibilities</span><span class="badge b-ok">renders</span></figcaption>
+    <div class="canvas"><pre class="mermaid">
+flowchart TB
+    subgraph UIL["UI: LLM engine page"]
+        FORM["Form + validation"]
+        TESTB["Test connection"]
+        APPLY["Apply and activate"]
+    end
+    subgraph LAYER["agent_identity/llm_engines.py"]
+        MGR["EngineManager<br/>detect, test, resolve, override file"]
+        OLLB["OllamaEngine"]
+        LCPB["LlamaCppEngine"]
+        CLDB["CloudEngine"]
+        FAKB["FakeEngine"]
+    end
+    subgraph RT["runtime.py"]
+        SW["Showcase.switch_engine<br/>gate, drain, swap, rollback"]
+    end
+    FORM --> MGR
+    TESTB --> MGR
+    APPLY --> SW
+    SW --> MGR
+    MGR --> OLLB
+    MGR --> LCPB
+    MGR --> CLDB
+    MGR --> FAKB
+    SW -->|audit| AUDL[("Audit log")]
+    </pre></div>
+  </figure>
+
+  <h3 id="llm-config">Configuration and switching mechanisms</h3>
+  <p>The engine is resolved in this order. The first engine that answers wins. A result that comes after a failed attempt is labelled <code>fallback</code> and shown as a warning.</p>
+  <figure class="diagram">
+    <figcaption><span class="grow">Which engine is used at start-up</span><span class="badge b-ok">renders</span></figcaption>
+    <div class="canvas"><pre class="mermaid">
+flowchart TD
+    A[App start] --> B{"UI choice saved?<br/>.cuga_state/llm_engine.json"}
+    B -->|yes, engine answers| U["Use it - source: ui"]
+    B -->|no or not reachable| C{"AI_LLM_ENGINE set?"}
+    C -->|yes, engine answers| E["Use it - source: env"]
+    C -->|no or not reachable| D["Try engines in AI_LLM_FALLBACK_ENGINES order<br/>only if configured or detected"]
+    D -->|one answers| F["Use it - source: auto"]
+    D -->|none| G["Hard-coded Ollama localhost:11434 + granite4.2"]
+    G -->|not reachable| H["Offline fake model + warning in the UI"]
+    </pre></div>
+  </figure>
+
+  <details class="fold" open>
+    <summary>Try it: engine resolver simulator <span class="badge b-test">interactive</span></summary>
+    <div class="body">
+      <p>Set what is available and see which engine the rules above would pick. This is a teaching model of the documented order, not a probe of your machine.</p>
+      <div class="sim" id="sim">
+        <div class="row">
+          <label>UI choice saved <select id="s-ui"><option value="">none</option><option value="ollama">ollama</option><option value="llamacpp">llamacpp</option><option value="cloud">cloud</option></select></label>
+          <label><code>AI_LLM_ENGINE</code> <select id="s-env"><option value="">empty (auto)</option><option value="ollama">ollama</option><option value="llamacpp">llamacpp</option><option value="cloud">cloud</option></select></label>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="s-ollama" checked> Ollama answers</label>
+          <label><input type="checkbox" id="s-llama"> llama.cpp answers</label>
+          <label><input type="checkbox" id="s-cloud"> Cloud URL, model and key set, and answers</label>
+        </div>
+        <p style="margin:6px 0">Fallback order: <code>ollama, llamacpp, cloud</code> (<code>AI_LLM_FALLBACK_ENGINES</code>)</p>
+        <ol id="sim-list"></ol>
+        <p class="result" id="sim-result" aria-live="polite"></p>
+      </div>
+    </div>
+  </details>
+
+  <h4>Switching at runtime without a restart</h4>
+  <figure class="diagram">
+    <figcaption><span class="grow">Showcase.switch_engine: test, gate, drain, swap, roll back on failure</span><span class="badge b-ok">renders</span></figcaption>
+    <div class="canvas"><pre class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant P as LLM engine page
+    participant S as Showcase
+    participant E as Old engine
+    participant N as New engine
+    U->>P: choose engine, fill the form
+    P->>P: validate inputs (required fields, https for remote cloud)
+    U->>P: Test connection
+    P->>N: probe (list models or ping)
+    N-->>P: ok, or error with How to fix
+    U->>P: Apply and activate
+    P->>S: switch_engine(new)
+    S->>N: test again
+    S->>S: close the gate (new turns wait)
+    S->>S: wait for running turns to finish (drain timeout)
+    S->>S: swap model, rebuild agent graphs
+    S-->>P: switched (audit llm.engine_switched)
+    Note over S,E: On any failure the old engine is restored,<br/>audit llm.engine_switch_failed, and the UI shows the cause and a fix
+    </pre></div>
+  </figure>
+
+  <details class="fold tech">
+    <summary>Switch state machine and what survives a switch <span class="badge b-test">detail</span></summary>
+    <div class="body">
+      <figure class="diagram">
+        <figcaption><span class="grow">Switch states</span><span class="badge b-ok">renders</span></figcaption>
+        <div class="canvas"><pre class="mermaid">
+stateDiagram-v2
+    [*] --> Serving
+    Serving --> Testing: switch_engine(new)
+    Testing --> Serving: test fails (nothing changed)
+    Testing --> Draining: test ok, gate closed
+    Draining --> Swapping: in-flight turns finished
+    Draining --> Restoring: drain timeout
+    Swapping --> Serving: model replaced, graphs rebuilt
+    Swapping --> Restoring: build fails
+    Restoring --> Serving: old engine back, switch_failed audited
+        </pre></div>
+      </figure>
+      <ul>
+        <li><b>Survives:</b> conversations and pending approvals (per-agent <code>MemorySaver</code>), the agent registry, tokens and the audit log.</li>
+        <li><b>Rebuilt lazily:</b> each Cuga graph, on the agent's next turn.</li>
+        <li><b>Caveat:</b> the graph reset uses private Cuga 0.4.5 attributes (<code>_model</code>, <code>_graph</code>, <code>_compiled_graph</code>). Re-check it when Cuga is upgraded.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="fold tech">
+    <summary>Configuration reference (<code>.env</code>) <span class="badge b-test">13 settings</span></summary>
+    <div class="body">
+      <div class="tbl"><table>
+        <thead><tr><th>Variable</th><th>Default</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_LLM_ENGINE</code></td><td>empty (auto)</td><td><code>ollama</code>, <code>llamacpp</code>, <code>cloud</code> or <code>fake</code></td></tr>
+          <tr><td><code>AI_LLM_FALLBACK_ENGINES</code></td><td><code>ollama,llamacpp,cloud</code></td><td>Order tried when nothing is chosen explicitly</td></tr>
+          <tr><td><code>AI_LLM_TIMEOUT</code></td><td><code>300</code></td><td>Seconds one model call may take</td></tr>
+          <tr><td><code>AI_LLM_MODE</code></td><td><code>ollama</code></td><td><code>fake</code> forces the offline model</td></tr>
+          <tr><td><code>AI_OLLAMA_BASE_URL</code>, <code>AI_OLLAMA_MODEL</code></td><td><code>http://localhost:11434</code>, <code>granite4.2:latest</code></td><td>Ollama settings</td></tr>
+          <tr><td><code>AI_LLAMACPP_BASE_URL</code>, <code>AI_LLAMACPP_MODEL</code></td><td>empty</td><td>llama.cpp server; empty URL means probe</td></tr>
+          <tr><td><code>AI_LLAMACPP_PROBE_URLS</code></td><td><code>http://localhost:8080,http://localhost:9931</code></td><td>URLs probed to detect <code>llama-server</code></td></tr>
+          <tr><td><code>AI_CLOUD_BASE_URL</code>, <code>AI_CLOUD_MODEL</code>, <code>AI_CLOUD_API_KEY</code></td><td>empty</td><td>Auto-selected only when all three are set</td></tr>
+        </tbody>
+      </table></div>
+<div class="code"><div class="cap"><span>.env</span><button data-copy>Copy</button></div><pre><span class="tk-c"># Persistent default: use a local llama.cpp server</span>
+AI_LLM_ENGINE=llamacpp
+AI_LLAMACPP_BASE_URL=http://localhost:8080
+AI_LLM_FALLBACK_ENGINES=llamacpp,ollama,cloud
+
+<span class="tk-c"># Cloud engine (the key stays here, never in the UI file)</span>
+AI_CLOUD_BASE_URL=https://api.example.com/v1
+AI_CLOUD_MODEL=your-model
+AI_CLOUD_API_KEY=your-key</pre></div>
+      <div class="callout ok"><strong>Security rules for engines</strong><p>API keys are held as <code>SecretStr</code> and are never logged or shown. The UI saves engine, URL and model only, in <code>.cuga_state/llm_engine.json</code> (mode 600). Plain <code>http://</code> to a remote host is refused.</p></div>
+    </div>
+  </details>
+</section>
+
+<!-- ===================================================== 4. LIFECYCLE -->
+<section class="sec" id="lifecycle">
+  <span class="sec-num">Section 4</span>
+  <h2>Agent lifecycle</h2>
+
+  <h3 id="state-machine">State machine</h3>
+  <p>An agent starts as a record created by a developer and becomes usable only after a <b>different</b> person approves it. The kill switch moves it to <code>SUSPENDED</code>; reactivation brings it back.</p>
+  <figure class="diagram">
+    <figcaption><span class="grow">Agent lifecycle (corrected diagram: <code>DEFAULT</code> is shown through an alias)</span><span class="badge b-ok">renders</span></figcaption>
+    <div class="canvas"><pre class="mermaid">
+stateDiagram-v2
+    direction LR
+    state "DEFAULT" as Pending
+    [*] --> Pending: create_agent
+    Pending --> ACTIVE: approve_agent
+    ACTIVE --> SUSPENDED: suspend_agent
+    SUSPENDED --> ACTIVE: reactivate_agent
+    note right of Pending: created by a developer
+    note right of ACTIVE: approver is never the creator. Can register clients and issue tokens
+    note right of SUSPENDED: kill switch. Token issuance blocked
+    </pre></div>
+  </figure>
+  <div class="callout"><strong>Why the alias?</strong><p><code>DEFAULT</code> is a reserved keyword in Mermaid state diagrams, so using it as a bare state name fails with <i>Expecting 'ID', 'EDGE_STATE', got 'DEFAULT'</i>. <code>state "DEFAULT" as Pending</code> keeps the label <code>DEFAULT</code>, which matches the status value in the code.</p></div>
+
+  <h3>Transitions and lifecycle stages</h3>
+  <p>Select a stage to see who may move the agent, what the code does and what is written to the audit log.</p>
+  <div id="lifecycle-explorer">
+    <div class="states" role="group" aria-label="Lifecycle stage">
+      <button class="state-btn" data-state="DEFAULT" aria-pressed="true">DEFAULT</button>
+      <button class="state-btn" data-state="ACTIVE" aria-pressed="false">ACTIVE</button>
+      <button class="state-btn" data-state="SUSPENDED" aria-pressed="false">SUSPENDED</button>
+    </div>
+    <div class="state-panel" id="state-panel" aria-live="polite"></div>
+  </div>
+
+  <h3 id="status-map">Status values mapped to code</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Status</th><th>Meaning</th><th>Set by</th><th>Audit event</th><th>Implementation</th></tr></thead>
+    <tbody>
+      <tr><td><code>DEFAULT</code></td><td>Created, not yet approved. Cannot register a client or obtain tokens.</td><td><code>create_agent</code> (needs <code>writeAgents</code>)</td><td><code>agent.created</code></td><td><code>AgentStatus.DEFAULT</code> in <code>models.py</code></td></tr>
+      <tr><td><code>ACTIVE</code></td><td>Approved. May register an OAuth client and obtain tokens.</td><td><code>approve_agent</code> or <code>reactivate_agent</code> (needs <code>manageAgentStatus</code>)</td><td><code>agent.approved</code>, <code>agent.reactivated</code></td><td><code>AgentStatus.ACTIVE</code>; <code>lifecycle.py</code></td></tr>
+      <tr><td><code>SUSPENDED</code></td><td>Kill switch. New token issuance is blocked.</td><td><code>suspend_agent</code> (needs <code>manageAgentStatus</code>)</td><td><code>agent.suspended</code></td><td><code>AgentStatus.SUSPENDED</code></td></tr>
+      <tr><td><code>UNDER_REVIEW</code></td><td>Defined in the enum for completeness. No transition in this showcase uses it.</td><td>not used</td><td>none</td><td><code>AgentStatus.UNDER_REVIEW</code></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout warn"><strong>Suspension and tokens already issued</strong><p>In the identity service, suspending an agent blocks <i>new</i> tokens only; tokens already issued stay valid until they expire. The showcase closes the gap with <code>AI_STRICT_STATUS_CHECK=true</code>, which checks the agent status on every validation. Short token lifetimes (default 300 s) are the second line of defence.</p></div>
+  <details class="fold tech">
+    <summary>Code: onboarding in three calls <span class="badge b-test">example</span></summary>
+    <div class="body">
+<div class="code"><div class="cap"><span>python</span><button data-copy>Copy</button></div><pre><span class="tk-c"># agent_identity/lifecycle.py (AgentIdentityService)</span>
+rec   = service.create_agent(dev, <span class="tk-s">"revenue-analyst"</span>, <span class="tk-s">"Read-only CRM analytics"</span>, {<span class="tk-s">"crm:read"</span>})  <span class="tk-c"># DEFAULT</span>
+rec   = service.approve_agent(approver, rec.agent_id)      <span class="tk-c"># ACTIVE (SeparationOfDutiesError if approver == creator)</span>
+creds = service.register_client(dev, rec.agent_id)         <span class="tk-c"># OAuth client; the secret is shown once</span>
+
+<span class="tk-c"># or in one idempotent call</span>
+rec = service.onboard(dev, approver, <span class="tk-s">"revenue-analyst"</span>, <span class="tk-s">"Read-only CRM analytics"</span>, {<span class="tk-s">"crm:read"</span>})</pre></div>
+    </div>
+  </details>
+</section>
+
+<!-- ===================================================== 5. FEATURES -->
+<section class="sec" id="features">
+  <span class="sec-num">Section 5</span>
+  <h2>Features</h2>
+  <div class="grid">
+    <div class="card"><span class="kicker">Feature</span><h4>Configurable LLM engine selection</h4><p>Choose the engine in the UI or in <code>.env</code>. A saved UI choice wins; <code>.env</code> is the persistent fallback.</p></div>
+    <div class="card"><span class="kicker">Feature</span><h4>Multi-backend support</h4><p>Ollama, llama.cpp and cloud OpenAI-compatible services behind one interface, with detection of what is installed and reachable.</p></div>
+    <div class="card"><span class="kicker">Feature</span><h4>Runtime switching</h4><p>Test, wait for running requests, swap, and restore the old engine on any failure. Every outcome is audited.</p></div>
+    <div class="card"><span class="kicker">Feature</span><h4>Clear errors</h4><p>Each failure carries a message and a <i>How to fix</i> line, shown in the UI and written to the log, never with keys.</p></div>
+  </div>
+
+  <h3 id="feature-status">Status of each feature</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Feature</th><th>Status</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>Agent lifecycle with separation of duties</td><td><span class="badge b-ok">Complete</span></td><td>12 lifecycle tests; <code>registry.lifecycle</code></td></tr>
+      <tr><td>Autonomous, delegated, privileged and chained access</td><td><span class="badge b-ok">Complete</span></td><td>14 token tests; 5 scenarios</td></tr>
+      <tr><td>Cuga policies and human approval</td><td><span class="badge b-ok">Complete</span></td><td>10 Cuga integration tests; live chat checked</td></tr>
+      <tr><td>Engine layer: detection, test, resolve, fallback</td><td><span class="badge b-ok">Complete</span></td><td>28 engine tests; Ollama live</td></tr>
+      <tr><td>Runtime switching with rollback</td><td><span class="badge b-ok">Complete</span></td><td>10 switching tests; live UI switch and reset</td></tr>
+      <tr><td>llama.cpp engine</td><td><span class="badge b-warn">Unverified live</span></td><td>Mocked HTTP; closed-port error shown live</td></tr>
+      <tr><td>Cloud engine</td><td><span class="badge b-warn">Unverified live</span></td><td>Mocked HTTP; no API key available</td></tr>
+      <tr><td>Identity service</td><td><span class="badge b-sim">Simulated</span></td><td><code>MockVerifyBackend</code>; <code>HttpVerifyBackend</code> untested</td></tr>
+      <tr><td>Podman image</td><td><span class="badge b-warn">Needs rebuild</span></td><td>Built before the engine layer; run <code>scripts/container.sh</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="validation">Tested scenarios and validation results</h3>
+  <div class="grid">
+    <div class="card"><span class="badge b-ok">Pass</span><h4>118 unit tests</h4><p>Offline, with the fake model. Includes 38 added for the engine layer.</p></div>
+    <div class="card"><span class="badge b-ok">Pass</span><h4>10 of 10 harness scenarios</h4><p>Plus 11 Harness Kit skills scaffolded into a temporary folder.</p></div>
+    <div class="card"><span class="badge b-ok">Pass</span><h4>Demo and UI smoke test</h4><p>The offline demo writes a report. All nine pages were exercised in a browser.</p></div>
+  </div>
+  <p><b>Unit tests by file</b></p>
+  <div class="bars" id="test-bars" aria-label="Number of tests per file"></div>
+
+  <details class="fold">
+    <summary>The 10 conformance scenarios <span class="badge b-ok">10 / 10 pass</span></summary>
+    <div class="body">
+      <div class="tbl"><table>
+        <thead><tr><th>Scenario</th><th>What it proves</th></tr></thead>
+        <tbody>
+          <tr><td><code>registry.lifecycle</code></td><td>Agents are ACTIVE with a bound OAuth client after approval</td></tr>
+          <tr><td><code>obo.allow</code></td><td>Learning Coach enrols the user on their behalf</td></tr>
+          <tr><td><code>obo.no_user_context</code></td><td>On-behalf-of access without a logged-in user is denied</td></tr>
+          <tr><td><code>scope.user_ceiling</code></td><td>The agent cannot exceed the user's entitlements</td></tr>
+          <tr><td><code>scope.agent_ceiling</code></td><td>A read-only agent cannot write even though a write tool exists</td></tr>
+          <tr><td><code>privileged.token</code></td><td>A privileged action uses a short-lived token with <code>authorization_details</code></td></tr>
+          <tr><td><code>kill_switch</code></td><td>A suspended agent is refused (<code>AgentNotActive</code>)</td></tr>
+          <tr><td><code>audit.correlation</code></td><td>Allow and deny decisions are in the audit log, keyed by Agent ID</td></tr>
+          <tr><td><code>cuga.policies</code></td><td>Intent guards block risky requests before any tool or model runs</td></tr>
+          <tr><td><code>supervisor.chain</code></td><td>Supervisor delegation nests the actor chain in the token</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </details>
+</section>
+
+<!-- ===================================================== 6. TECHNICAL -->
+<section class="sec" id="technical">
+  <span class="sec-num">Section 6</span>
+  <h2>Technical details</h2>
+
+  <h3 id="tests">Test coverage information</h3>
+  <p>The suite is offline: <code>tests/conftest.py</code> sets <code>AI_LLM_MODE=fake</code>, so no model is needed. The numbers measure the tests that exist; they are not a line-coverage percentage.</p>
+  <div class="code"><div class="cap"><span>bash</span><button data-copy>Copy</button></div><pre>scripts/test.sh                       <span class="tk-c"># 118 passed</span>
+.venv/bin/python -m pytest -q         <span class="tk-c"># same, directly</span>
+.venv/bin/python -m harness           <span class="tk-c"># 11 skills + 10/10 scenarios, reports in output/</span></pre></div>
+
+  <h3 id="demo">Demo execution and output handling</h3>
+  <p><code>demo.py</code> walks through onboarding, autonomous and delegated access, the privileged token, the kill switch and the audit log. It works offline and writes a timestamped report. Reports from the harness are written the same way.</p>
+  <div class="code"><div class="cap"><span>bash</span><button data-copy>Copy</button></div><pre>.venv/bin/python demo.py              <span class="tk-c"># offline; writes output/demo_&lt;timestamp&gt;.md</span>
+.venv/bin/python demo.py --live       <span class="tk-c"># also chats with the agents through Cuga + the chosen engine</span>
+ls output/                            <span class="tk-c"># conformance_*.md|json, demo_*.md, showcase_*.log</span></pre></div>
+  <p><code>input/</code> and <code>output/</code> exist in the repository, but their contents are git-ignored.</p>
+
+  <h3 id="run">Application startup and shutdown</h3>
+  <div class="tabs" data-tabs>
+    <div class="tablist" role="tablist" aria-label="Run options">
+      <button class="tab" role="tab" aria-selected="true" id="r1" aria-controls="rp1">Local</button>
+      <button class="tab" role="tab" aria-selected="false" id="r2" aria-controls="rp2" tabindex="-1">Podman</button>
+      <button class="tab" role="tab" aria-selected="false" id="r3" aria-controls="rp3" tabindex="-1">Clean up</button>
+    </div>
+    <div class="tabpanel" role="tabpanel" id="rp1" aria-labelledby="r1">
+<div class="code"><div class="cap"><span>bash</span><button data-copy>Copy</button></div><pre>scripts/setup.sh          <span class="tk-c"># creates .venv with uv and installs requirements</span>
+cp .env.example .env      <span class="tk-c"># optional: adjust settings</span>
+scripts/start.sh          <span class="tk-c"># detached; prints http://localhost:8601 and the log path</span>
+scripts/stop.sh           <span class="tk-c"># graceful: SIGTERM, then SIGKILL after 10 s</span></pre></div>
+      <p>Prerequisites: Python 3.12, <code>uv</code>, and optionally Ollama with <code>granite4.2:latest</code>. The port is 8601 (override with <code>AI_UI_PORT</code>).</p>
+    </div>
+    <div class="tabpanel" role="tabpanel" id="rp2" aria-labelledby="r2" hidden>
+<div class="code"><div class="cap"><span>bash</span><button data-copy>Copy</button></div><pre>scripts/container.sh      <span class="tk-c"># build and run with Podman (CPU-only image, about 2.3 GB)</span></pre></div>
+      <p>Engine URLs inside the container point to <code>host.containers.internal</code> (override with <code>CONTAINER_HOST_ADDR</code>). The image must be rebuilt to include the engine layer.</p>
+    </div>
+    <div class="tabpanel" role="tabpanel" id="rp3" aria-labelledby="r3" hidden>
+<div class="code"><div class="cap"><span>bash</span><button data-copy>Copy</button></div><pre>scripts/cleanup.sh        <span class="tk-c"># removes .venv, node_modules, __pycache__</span>
+scripts/remove_images.sh  <span class="tk-c"># removes locally built container images</span></pre></div>
+    </div>
+  </div>
+  <details class="fold tech">
+    <summary>Error handling and logging <span class="badge b-test">detail</span></summary>
+    <div class="body">
+      <ul>
+        <li>Every failure on the engine path becomes an <code>LLMEngineError</code> with a message and a remediation. The UI prints both.</li>
+        <li>The logger <code>agent_identity.llm</code> writes the same text. Keys are <code>SecretStr</code> and never appear.</li>
+        <li>Switches are audited as <code>llm.engine_switched</code> or <code>llm.engine_switch_failed</code>.</li>
+        <li>Logs: <code>.run/streamlit.log</code> for the UI, <code>output/showcase_*.log</code> for scripts.</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ===================================================== 7. LIMITS -->
+<section class="sec" id="limits">
+  <span class="sec-num">Section 7</span>
+  <h2>Honest limits</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Area</th><th>Limit</th></tr></thead>
+    <tbody>
+      <tr><td>Identity service</td><td>Simulated by <code>MockVerifyBackend</code>. <code>HttpVerifyBackend</code> has not been tested against a live tenant. Do not use the mock's keys or users in production.</td></tr>
+      <tr><td>llama.cpp, cloud</td><td>Successful connections were tested with mocked HTTP only. No <code>llama-server</code> was installed and no cloud key was available.</td></tr>
+      <tr><td>Models</td><td><code>granite4.2:latest</code> works with function calling. <code>llama3.2</code> hung in earlier runs. <code>codeact</code> mode does not work with granite.</td></tr>
+      <tr><td>Harness Kit</td><td>It scaffolds skills for coding assistants; it is not a test runner.</td></tr>
+      <tr><td>Guards</td><td>Keyword intent guards are a first line only. Tool-level identity checks enforce.</td></tr>
+      <tr><td>Container</td><td>The Podman image predates the engine layer; the container-to-host Ollama path was not exercised.</td></tr>
+      <tr><td>Cuga internals</td><td>Runtime model swap relies on private attributes of Cuga 0.4.5.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ===================================================== GALLERY / SOURCES -->
+<section class="sec" id="gallery">
+  <span class="sec-num">Screenshots</span>
+  <h2>The running application</h2>
+  <p>Captured from the live UI at <code>http://localhost:8601</code>. Select an image to enlarge it.</p>
+  <details class="fold" open>
+    <summary>UI screenshots <span class="badge b-test">10 images</span></summary>
+    <div class="body">
+      <div class="shots">
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_flows.png" alt="How Agent Identity works page with a sequence diagram"><figcaption>How Agent Identity works</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_registry.png" alt="Agent registry and lifecycle page"><figcaption>Agent registry and lifecycle</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_killswitch.png" alt="A suspended agent after the kill switch"><figcaption>Kill switch: suspended agent</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_token_inspector.png" alt="Token inspector showing decoded claims"><figcaption>Token inspector</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_audit.png" alt="Audit trail keyed by agent ID"><figcaption>Audit trail</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_harness.png" alt="Harness Kit validation with 10 of 10 scenarios passing"><figcaption>Harness Kit validation</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_llm_engine_ollama.png" alt="LLM engine page with Ollama detected"><figcaption>LLM engine: Ollama detected</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_llm_engine_error_remediation.png" alt="Failed connection test with a How to fix message"><figcaption>Failed test with How to fix</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_llm_engine_switched.png" alt="Engine switched at runtime, source ui"><figcaption>Runtime switch applied</figcaption></figure>
+        <figure><img loading="lazy" width="2400" height="1792" src="../.bob/artifacts/ui_llm_engine_cloud_form.png" alt="Cloud form with validation and disabled buttons"><figcaption>Cloud form validation</figcaption></figure>
+      </div>
+    </div>
+  </details>
+</section>
+
+<section class="sec" id="sources">
+  <span class="sec-num">Sources</span>
+  <h2>Sources and further reading</h2>
+  <ul>
+    <li><a href="https://github.com/cuga-project/cuga-agent">cuga-agent</a>, <a href="https://github.com/cuga-project">cuga-project</a> and <a href="https://github.com/cuga-project/cuga-harness-kit">cuga-harness-kit</a> on GitHub</li>
+    <li><a href="https://www.ibm.com/products/agent-identity">IBM Agent Identity</a> product page</li>
+    <li>In this repository: <a href="../README.md">README</a>, <a href="Quickstart.md">Quickstart</a>, <a href="Architecture.md">Architecture</a>, <a href="AgentIdentity-Concepts.md">Concepts</a>, <a href="BestPractices.md">Best practices</a></li>
+    <li>Diagrams are drawn with <a href="https://mermaid.js.org">Mermaid</a> 11.17.2 (MIT licence, bundled in <code>Docs/assets/</code>).</li>
+  </ul>
+</section>
+</main>
+</div>
+
+<footer>
+  <p><b>Licence:</b> Apache-2.0 (see <code>LICENSE</code>). This page is static HTML and works offline. Figures were taken from the repository at the time of writing: 118 tests, 10 harness scenarios, 11 Harness Kit skills.</p>
+  <p>Made with IBM Bob.</p>
+</footer>
+
+<div class="lightbox" id="lightbox" role="dialog" aria-label="Enlarged screenshot"><img alt=""></div>
+
+<script src="assets/mermaid.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  /* ---------------- Mermaid: render now if visible, otherwise when its <details> opens ---------------- */
+  var mermaidOk = typeof window.mermaid !== "undefined";
+  var diagrams = $$("pre.mermaid");
+  var renderedCount = 0, failed = [];
+  if (mermaidOk) {
+    window.mermaid.initialize({
+      startOnLoad: false, securityLevel: "strict", theme: "base",
+      themeVariables: { fontFamily: "-apple-system, Segoe UI, system-ui, sans-serif", primaryColor: "#e5eeff",
+        primaryBorderColor: "#0f62fe", primaryTextColor: "#161a22", lineColor: "#525d70", secondaryColor: "#eee9fb",
+        tertiaryColor: "#f4f6fa", noteBkgColor: "#fff3d6", noteTextColor: "#161a22" },
+      flowchart: { htmlLabels: true, curve: "basis" }, sequence: { mirrorActors: false, useMaxWidth: true }
+    });
+  }
+  function isHidden(el) {
+    for (var d = el.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) { if (!d.open) return true; }
+    return false;
+  }
+  function renderOne(el) {
+    if (el.dataset.rendered) return Promise.resolve();
+    el.dataset.rendered = "1";
+    if (!mermaidOk) { showError(el, "Mermaid.js could not be loaded from assets/mermaid.min.js."); return Promise.resolve(); }
+    return window.mermaid.run({ nodes: [el], suppressErrors: false }).then(function () { renderedCount++; })
+      .catch(function (err) { failed.push(el); showError(el, (err && err.message) || String(err)); });
+  }
+  function showError(el, msg) {
+    var box = document.createElement("div");
+    box.className = "diagram-error"; box.setAttribute("role", "alert");
+    box.textContent = "Diagram could not be rendered: " + String(msg).split("\n")[0];
+    el.replaceWith(box);
+  }
+  function renderVisible() { return diagrams.filter(function (d) { return !isHidden(d); }).reduce(function (p, d) { return p.then(function () { return renderOne(d); }); }, Promise.resolve()); }
+  renderVisible();
+  $$("details.fold").forEach(function (d) { d.addEventListener("toggle", function () { if (d.open) renderVisible(); }); });
+
+  /* ---------------- tabs (arrow-key navigation) ---------------- */
+  $$("[data-tabs]").forEach(function (box) {
+    var tabs = $$('[role="tab"]', box);
+    function select(t) {
+      tabs.forEach(function (x) {
+        var on = x === t; x.setAttribute("aria-selected", on); x.tabIndex = on ? 0 : -1;
+        $("#" + x.getAttribute("aria-controls")).hidden = !on;
+      });
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener("click", function () { select(t); });
+      t.addEventListener("keydown", function (e) {
+        var n = null;
+        if (e.key === "ArrowRight") n = tabs[(i + 1) % tabs.length];
+        if (e.key === "ArrowLeft") n = tabs[(i - 1 + tabs.length) % tabs.length];
+        if (e.key === "Home") n = tabs[0];
+        if (e.key === "End") n = tabs[tabs.length - 1];
+        if (n) { e.preventDefault(); select(n); n.focus(); }
+      });
+    });
+  });
+
+  /* ---------------- lifecycle explorer ---------------- */
+  var STATES = {
+    DEFAULT: { t: "DEFAULT: created, waiting for approval",
+      who: "A developer with <code>writeAgents</code> calls <code>create_agent</code>.",
+      can: "Nothing yet. The agent cannot register a client or obtain a token.",
+      next: "<code>approve_agent</code> by a different person with <code>manageAgentStatus</code> moves it to ACTIVE. The creator is refused with <code>SeparationOfDutiesError</code>.",
+      audit: "<code>agent.created</code>; a refused approval is audited as <code>agent.approve</code> with outcome <code>denied</code>." },
+    ACTIVE: { t: "ACTIVE: approved and usable",
+      who: "An approver with <code>manageAgentStatus</code> calls <code>approve_agent</code> (or <code>reactivate_agent</code> after a suspension).",
+      can: "<code>register_client</code> creates the OAuth client (secret shown once). The agent can then obtain autonomous, delegated or privileged tokens, always within its scope ceiling.",
+      next: "<code>suspend_agent</code> moves it to SUSPENDED.",
+      audit: "<code>agent.approved</code>, <code>client.registered</code>, <code>token.issued</code>, <code>access.granted</code> or <code>access.denied</code>." },
+    SUSPENDED: { t: "SUSPENDED: the kill switch is on",
+      who: "An approver with <code>manageAgentStatus</code> calls <code>suspend_agent</code>, with an optional reason.",
+      can: "New tokens are refused. With <code>AI_STRICT_STATUS_CHECK=true</code>, tokens issued earlier are refused too (<code>AgentNotActive</code>).",
+      next: "<code>reactivate_agent</code> returns it to ACTIVE.",
+      audit: "<code>agent.suspended</code> with the reason; later calls appear as denied." }
+  };
+  function showState(name) {
+    var s = STATES[name];
+    $$(".state-btn").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.state === name); });
+    $("#state-panel").innerHTML = "<h4>" + s.t + "</h4><p><b>Who moves it here:</b> " + s.who + "</p><p><b>What it can do:</b> " + s.can +
+      "</p><p><b>Next transition:</b> " + s.next + "</p><p><b>Audit trail:</b> " + s.audit + "</p>";
+  }
+  $$(".state-btn").forEach(function (b) { b.addEventListener("click", function () { showState(b.dataset.state); }); });
+  showState("DEFAULT");
+
+  /* ---------------- test bars ---------------- */
+  var TESTS = [["test_llm_engines.py", 28], ["test_ui_helpers.py", 23], ["test_tokens.py", 14], ["test_lifecycle.py", 12],
+               ["test_cuga_integration.py", 10], ["test_engine_switching.py", 10], ["test_tools.py", 9], ["test_harness.py", 6],
+               ["test_bootstrap_demo.py", 4], ["test_async_runner.py", 2]];
+  var total = TESTS.reduce(function (a, t) { return a + t[1]; }, 0), max = Math.max.apply(null, TESTS.map(function (t) { return t[1]; }));
+  var bars = $("#test-bars");
+  TESTS.forEach(function (t) {
+    var row = document.createElement("div"); row.className = "bar-row";
+    var l = document.createElement("code"); l.textContent = t[0];
+    var tr = document.createElement("span"); tr.className = "track";
+    var f = document.createElement("span"); f.className = "fill"; f.style.width = (t[1] / max * 100) + "%"; tr.appendChild(f);
+    var n = document.createElement("b"); n.textContent = t[1];
+    row.appendChild(l); row.appendChild(tr); row.appendChild(n); bars.appendChild(row);
+  });
+  var cap = document.createElement("p"); cap.textContent = "Total: " + total + " tests."; bars.appendChild(cap);
+
+  /* ---------------- engine resolver simulator (mirrors EngineManager.resolve order) ---------------- */
+  var NAMES = { ollama: "Ollama", llamacpp: "llama.cpp", cloud: "Cloud" };
+  function simulate() {
+    var up = { ollama: $("#s-ollama").checked, llamacpp: $("#s-llama").checked, cloud: $("#s-cloud").checked };
+    var cands = [], ui = $("#s-ui").value, env = $("#s-env").value;
+    if (ui) cands.push(["ui", ui]);
+    if (env) cands.push(["env", env]);
+    ["ollama", "llamacpp", "cloud"].forEach(function (e) { cands.push(["auto", e]); });
+    cands.push(["fallback", "ollama"]);
+    var seen = {}, list = $("#sim-list"), won = null, failedBefore = 0;
+    list.innerHTML = "";
+    cands.forEach(function (c) {
+      if (seen[c[1]]) return; seen[c[1]] = true;
+      var li = document.createElement("li");
+      if (won) { li.className = "skip"; li.textContent = NAMES[c[1]] + " (" + c[0] + "): not tried"; }
+      else if (up[c[1]]) { li.className = "win"; li.textContent = NAMES[c[1]] + " (" + c[0] + "): answers, selected"; won = c; }
+      else { li.textContent = NAMES[c[1]] + " (" + c[0] + "): does not answer, next"; failedBefore++; }
+      list.appendChild(li);
+    });
+    var r = $("#sim-result");
+    if (won) {
+      var label = failedBefore ? "fallback" : won[0];
+      r.textContent = "Result: " + NAMES[won[1]] + ", source label \u201C" + label + "\u201D" + (failedBefore ? " (shown as a warning in the UI)." : ".");
+    } else { r.textContent = "Result: offline fake model, with a warning in the UI."; }
+  }
+  $$("#sim select, #sim input").forEach(function (e) { e.addEventListener("change", simulate); });
+  simulate();
+
+  /* ---------------- copy buttons ---------------- */
+  $$("[data-copy]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var txt = b.closest(".code").querySelector("pre").innerText;
+      var done = function (ok) { var o = b.textContent; b.textContent = ok ? "Copied" : "Press Ctrl+C"; setTimeout(function () { b.textContent = o; }, 1400); };
+      if (navigator.clipboard && window.isSecureContext !== false) { navigator.clipboard.writeText(txt).then(function () { done(true); }, function () { done(false); }); }
+      else { done(false); }
+    });
+  });
+
+  /* ---------------- toolbar, nav, scroll-spy, progress ---------------- */
+  $("#expandBtn").addEventListener("click", function () { $$("details.fold").forEach(function (d) { d.open = true; }); });
+  $("#collapseBtn").addEventListener("click", function () { $$("details.fold").forEach(function (d) { d.open = false; }); });
+  var aud = $("#audBtn");
+  aud.addEventListener("click", function () {
+    var on = document.body.classList.toggle("simple"); aud.setAttribute("aria-pressed", on);
+    aud.textContent = on ? "Technical view" : "Plain-language view";
+  });
+  var side = $("#sidenav"), menu = $("#menuBtn");
+  menu.addEventListener("click", function () { var o = side.classList.toggle("open"); menu.setAttribute("aria-expanded", o); });
+  $$("a", side).forEach(function (a) { a.addEventListener("click", function () { side.classList.remove("open"); menu.setAttribute("aria-expanded", "false"); }); });
+
+  var links = $$("a[href^='#']", side), targets = links.map(function (a) { return $(a.getAttribute("href")); });
+  function spy() {
+    var y = window.scrollY + 120, cur = 0;
+    targets.forEach(function (t, i) { if (t && t.getBoundingClientRect().top + window.scrollY <= y) cur = i; });
+    links.forEach(function (a, i) { a.classList.toggle("active", i === cur); if (i === cur) a.setAttribute("aria-current", "location"); else a.removeAttribute("aria-current"); });
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    $("#progress").style.width = (h > 0 ? window.scrollY / h * 100 : 0) + "%";
+  }
+  window.addEventListener("scroll", spy, { passive: true }); spy();
+
+  /* open the fold that contains a deep-linked anchor */
+  function openForHash() { var t = location.hash && $(location.hash); if (t) { var d = t.closest("details"); if (d) d.open = true; } }
+  window.addEventListener("hashchange", openForHash); openForHash();
+
+  /* ---------------- lightbox ---------------- */
+  var lb = $("#lightbox"), lbImg = $("img", lb);
+  $$(".shots img").forEach(function (i) { i.addEventListener("click", function () { lbImg.src = i.src; lbImg.alt = i.alt; lb.classList.add("on"); }); });
+  lb.addEventListener("click", function () { lb.classList.remove("on"); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") lb.classList.remove("on"); });
+
+  /* ---------------- print: open everything and render all diagrams ---------------- */
+  window.addEventListener("beforeprint", function () { $$("details.fold").forEach(function (d) { d.open = true; }); renderVisible(); });
+
+  /* expose a small status for automated checks */
+  window.__showcaseDiagrams = function () { return { total: diagrams.length, rendered: renderedCount, failed: failed.length }; };
+})();
+</script>
+</body>
+</html>

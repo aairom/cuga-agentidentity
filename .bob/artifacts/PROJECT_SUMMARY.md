@@ -12,7 +12,7 @@ Artifact index for the repository. Screenshots in this folder were captured from
 | Harness Kit | Scaffold and validate 11 skills (`cuga-harness-kit 0.2.0`) plus 10 conformance scenarios |
 | LLM engines | `agent_identity/llm_engines.py`: pluggable Ollama / llama.cpp / cloud OpenAI-compatible backends, detection, fallback priority, runtime switch with rollback, remediation errors |
 | UI | Streamlit, 9 pages (incl. LLM engine), port 8601 |
-| Docs | `README.md`, `Docs/Quickstart.md`, `Docs/Architecture.md`, `Docs/AgentIdentity-Concepts.md`, `Docs/BestPractices.md` |
+| Docs | `README.md`, `Docs/Quickstart.md`, `Docs/Architecture.md`, `Docs/AgentIdentity-Concepts.md`, `Docs/BestPractices.md`, `Docs/AgentIdentity-Showcase.html` (interactive page, 7 Mermaid diagrams, bundled `Docs/assets/mermaid.min.js`) |
 | Ops | `scripts/` (setup, start detached, stop, test, cleanup, container, remove_images), multi-stage `Containerfile` |
 
 ## Screenshots
@@ -29,6 +29,8 @@ Artifact index for the repository. Screenshots in this folder were captured from
 | `ui_llm_engine_error_remediation.png` | Failed connection test with "How to fix" |
 | `ui_llm_engine_switched.png` | Runtime switch applied (source `ui`) |
 | `ui_llm_engine_cloud_form.png` | Cloud form validation, buttons disabled |
+| `html_showcase_top.png` | Top of the interactive showcase page |
+| `html_showcase_lifecycle.png` | Showcase page, agent lifecycle state machine (DEFAULT alias) |
 
 ## Validation evidence
 
