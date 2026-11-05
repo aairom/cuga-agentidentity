@@ -1,0 +1,9 @@
+.venv
+.git
+.run
+output
+.cuga_state
+tests
+_*
+.env
+__pycache__

@@ -1,0 +1,38 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Folders starting with underscore
+_*/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Binary / archives
+*.onnx
+*.onnx.data
+*.so
+*.tgz
+*.tar.gz
+*.zip
+*.dylib
+
+# Tooling
+.playwright-mcp/
+AGENTS.md
+.bob/mcp.json
+.cuga_state/
+.run/
+
+# input/output: keep folders, ignore contents
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
