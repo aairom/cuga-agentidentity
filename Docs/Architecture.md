@@ -64,8 +64,9 @@ flowchart TB
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DEFAULT: create_agent (developer)
-    DEFAULT --> ACTIVE: approve_agent (approver, never the creator)
+    state "DEFAULT" as Pending
+    [*] --> Pending: create_agent (developer)
+    Pending --> ACTIVE: approve_agent (approver, never the creator)
     ACTIVE --> ACTIVE: register_client, issue tokens
     ACTIVE --> SUSPENDED: suspend_agent (kill switch)
     SUSPENDED --> ACTIVE: reactivate_agent
